@@ -67,7 +67,7 @@
                 <div class="model-list">
                   <button
                     v-for="modelItem in visibleModels"
-                    :key="modelItem.name"
+                    :key="modelItem.id"
                     class="model-card"
                     :class="{ active: modelItem.name === currentModel.name }"
                     @click="selectModel(modelItem)"
@@ -277,6 +277,7 @@ const emit = defineEmits<{
 }>()
 
 interface ModelItem {
+  id: string
   name: string
   vendor: string
   desc: string
@@ -328,18 +329,33 @@ const videoModelTabs: Array<{ key: VidModelTab; label: string; icon: string }> =
 ]
 
 const imageModels: ModelItem[] = [
-  { name: 'Qwen Image 2.0', vendor: '官方', desc: '通义千问团队2026年2月10日发布的新一代图像模型', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { name: '通义万相 2.7', vendor: '官方', desc: '通义万相团队最新发布的图像生成与编辑模型', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { name: 'Qwen Image Turbo', vendor: '官方', desc: '通义千问团队发布的Qwen Image 25.12，25.11融合加速模型', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { name: 'Seedream 5.0 Lite', vendor: '第三方', desc: '', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { name: 'Seedream 4.5', vendor: '第三方', desc: '', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { name: 'Seedream 4.0', vendor: '第三方', desc: '', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'gemini-3.1-flash', name: 'Nano Banana 2', vendor: 'Google', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'gemini-3-pro', name: 'Nano Banana Pro', vendor: 'Google', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'gemini-2.5-flash', name: 'Nano Banana', vendor: 'Google', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'gpt-image-2', name: 'GPT Image 2', vendor: 'OpenAI', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'gpt-image-1.5', name: 'GPT Image 1.5', vendor: 'OpenAI', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'grok-imagine', name: 'Grok Imagine', vendor: 'xAI', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'gen-4-turbo', name: 'Gen-4 Turbo', vendor: 'Runway', desc: '支持图生图', icon: SEEDREAM_ICON, caps: ['ref'], tags: ['参考生图'] },
+  { id: 'gen-4', name: 'Gen-4', vendor: 'Runway', desc: '支持图生图、文生图', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'bfl-flux-2-max', name: 'FLUX.2 Max', vendor: 'BFL', desc: '支持图生图、文生图', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'bfl-flux-2-klein', name: 'FLUX.2 Klein', vendor: 'BFL', desc: '支持图生图、文生图', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
+  { id: 'seedream-5', name: 'Seedream 5.0', vendor: '字节', desc: '支持图生图、文生图', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
 ]
 
 const videoModels: ModelItem[] = [
-  { name: 'Happy Horse 1.0', vendor: '官方', desc: '支持文生/图生/参考生视频', icon: HAPPY_HORSE_ICON, caps: ['text', 'ref', 'video'], tags: ['文生视频', '图生视频', '视频生视频'] },
-  { name: '通义万相 2.7', vendor: '官方', desc: '更强剧情演绎的视频模型', icon: QWEN_ICON, caps: ['text', 'ref', 'video'], tags: ['文生视频', '图生视频', '视频生视频'] },
-  { name: '可灵 3.0 Omni', vendor: '第三方', desc: '多模态视频生成模型', icon: SEEDREAM_ICON, caps: ['text', 'ref', 'video'], tags: ['文生视频', '图生视频', '视频生视频'] },
+  { id: 'happy-horse-1', name: 'Happy Horse 1.0', vendor: '阿里巴巴', desc: '支持图生视频、文生视频', icon: HAPPY_HORSE_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
+  { id: 'seedance-2', name: 'Seedance 2.0', vendor: '字节', desc: '支持视频生视频、图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref', 'video'], tags: ['文生视频', '图生视频', '视频生视频'] },
+  { id: 'gen-4-5', name: 'Gen-4.5', vendor: 'Runway', desc: '支持图生视频、文生视频', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
+  { id: 'gen-4-turbo', name: 'Gen-4 Turbo', vendor: 'Runway', desc: '支持图生视频', icon: QWEN_ICON, caps: ['ref'], tags: ['图生视频'] },
+  { id: 'gen-4', name: 'Gen-4', vendor: 'Runway', desc: '支持图生视频', icon: QWEN_ICON, caps: ['ref'], tags: ['图生视频'] },
+  { id: 'kling-o3-4k', name: 'Kling O3 4K', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
+  { id: 'kling-o3-pro', name: 'Kling O3 Pro', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
+  { id: 'kling-o3-standard', name: 'Kling O3 Standard', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
+  { id: 'kling-3-0-4k', name: 'Kling 3.0 4K', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
+  { id: 'kling-3-0-pro', name: 'Kling 3.0 Pro', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
+  { id: 'kling-3-0-standard', name: 'Kling 3.0 Standard', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
+  { id: 'wan-2-6', name: 'WAN 2.6', vendor: 'WAN', desc: '支持图生视频', icon: QWEN_ICON, caps: ['ref'], tags: ['图生视频'] },
+  { id: 'wan-2-6-flash', name: 'WAN 2.6 Flash', vendor: 'WAN', desc: '支持图生视频', icon: QWEN_ICON, caps: ['ref'], tags: ['图生视频'] },
 ]
 
 const currentModel = ref<ModelItem>(imageModels[0])

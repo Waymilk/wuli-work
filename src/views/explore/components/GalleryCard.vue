@@ -45,6 +45,7 @@ const hovered = ref(false)
   overflow: hidden;
   cursor: pointer;
   position: relative;
+  z-index: 1;
 
   .media {
     position: relative;

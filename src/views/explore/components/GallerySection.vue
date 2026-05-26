@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
     position: absolute;
     right: 8px;
     top: 8px;
-    z-index: 10;
+    z-index: 1;
   }
 
   .ai-icon {
@@ -376,7 +376,7 @@ onBeforeUnmount(() => {
     position: absolute;
     top: 8px;
     width: auto;
-    z-index: 10;
+    z-index: 1;
   }
 
   .overlay {
@@ -393,7 +393,7 @@ onBeforeUnmount(() => {
     right: 0;
     top: 0;
     transition: opacity 0.2s ease;
-    z-index: 10;
+    z-index: 1;
   }
 
   .bottom-bar {
