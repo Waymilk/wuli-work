@@ -1,7 +1,7 @@
 <template>
   <a-modal
     class="wuli-auth-modal"
-    :open="props.open"
+    :open="open"
     :footer="null"
     :width="1020"
     centered
@@ -83,25 +83,27 @@
 
           <a-form layout="vertical" class="auth-form" @submit.prevent>
             <a-form-item>
-              <a-input v-model:value="username" class="auth-input" placeholder="请输入用户名" />
+              <a-input v-model:value="phone" class="auth-input" placeholder="请输入手机号">
+                <template #prefix>
+                  <div class="auth-phone-prefix">
+                    <span class="auth-country-code">+86</span>
+                    <span class="auth-prefix-divider"></span>
+                  </div>
+                </template>
+              </a-input>
             </a-form-item>
 
-            <a-form-item v-if="isRegister">
-              <a-input v-model:value="email" class="auth-input" placeholder="请输入邮箱" />
+            <a-form-item v-if="isRegister" class="auth-invite-item">
+              <a-input v-model:value="inviteCode" class="auth-input auth-invite-input" placeholder="请输入邀请码(可选)" />
             </a-form-item>
 
             <a-form-item>
-              <a-input v-model:value="password" class="auth-input" type="password" placeholder="请输入密码" />
+              <a-input v-model:value="code" class="auth-input" placeholder="请输入验证码">
+                <template #suffix>
+                  <a-button class="auth-code-btn" type="primary" :disabled="!phone.trim()">获取短信验证码</a-button>
+                </template>
+              </a-input>
             </a-form-item>
-
-            <a-form-item v-if="isRegister">
-              <a-input v-model:value="confirmPassword" class="auth-input" type="password" placeholder="请确认密码" />
-            </a-form-item>
-
-            <a-form-item v-if="errorMessage">
-              <div class="auth-error-text">{{ errorMessage }}</div>
-            </a-form-item>
-
           </a-form>
 
           <a-checkbox v-model:checked="agreed" class="auth-agreement">
@@ -121,12 +123,12 @@
             </span>
           </a-checkbox>
 
-          <a-button class="auth-submit-btn" type="primary" :disabled="!canSubmit || isSubmitting" :loading="isSubmitting" block @click="handleSubmit">
+          <a-button class="auth-submit-btn" type="primary" :disabled="!canSubmit" block>
             {{ isRegister ? '注 册' : '登 录' }}
           </a-button>
 
           <div class="auth-switch-row">
-            <button class="auth-switch-btn" type="button" @click="toggleMode">
+            <button class="auth-switch-btn" type="button" @click="isRegister = !isRegister">
               {{ isRegister ? '已有账号? 去登录' : '还没有账号? 去注册' }}
               <span class="auth-switch-icon">›</span>
             </button>
@@ -138,125 +140,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { message } from 'ant-design-vue'
-import request from '@/utils/request'
-import { useAuthStore } from '@/stores/auth'
+import { computed, ref } from 'vue'
 
-const props = defineProps<{ open: boolean }>()
+defineProps<{ open: boolean }>()
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
 }>()
 
-interface AuthUser {
-  id: number
-  username: string
-  email?: string
-}
-
-interface AuthResponse {
-  token: string
-  user: AuthUser
-}
-
 const isRegister = ref(true)
-const username = ref('')
-const email = ref('')
-const password = ref('')
-const confirmPassword = ref('')
+const phone = ref('')
+const inviteCode = ref('')
+const code = ref('')
 const agreed = ref(false)
-const isSubmitting = ref(false)
-const errorMessage = ref('')
-const authStore = useAuthStore()
-
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const canSubmit = computed(() => {
-  if (!agreed.value) return false
-  if (username.value.trim().length < 3) return false
-  if (password.value.trim().length < 6) return false
-  if (!isRegister.value) return true
-  if (!emailRegex.test(email.value.trim())) return false
-  return confirmPassword.value.trim().length >= 6
+  return phone.value.trim().length > 0 && code.value.trim().length > 0 && agreed.value
 })
-
-function resetForm() {
-  username.value = ''
-  email.value = ''
-  password.value = ''
-  confirmPassword.value = ''
-  agreed.value = false
-  errorMessage.value = ''
-}
-
-function toggleMode() {
-  isRegister.value = !isRegister.value
-  errorMessage.value = ''
-  password.value = ''
-  confirmPassword.value = ''
-}
-
-async function handleSubmit() {
-  if (!canSubmit.value || isSubmitting.value) return
-  errorMessage.value = ''
-
-  const cleanedUsername = username.value.trim()
-  const cleanedPassword = password.value.trim()
-  const cleanedEmail = email.value.trim()
-
-  if (isRegister.value && cleanedPassword !== confirmPassword.value.trim()) {
-    errorMessage.value = '两次输入的密码不一致'
-    return
-  }
-
-  isSubmitting.value = true
-  try {
-    let response: AuthResponse
-    if (isRegister.value) {
-      response = await request.post<unknown, AuthResponse>('/api/auth/register', {
-        username: cleanedUsername,
-        email: cleanedEmail,
-        password: cleanedPassword,
-      })
-    } else {
-      response = await request.post<unknown, AuthResponse>('/api/auth/login', {
-        username: cleanedUsername,
-        password: cleanedPassword,
-      })
-    }
-
-    if (!response?.token || !response?.user?.id) {
-      throw new Error('登录响应缺少必要字段')
-    }
-
-    authStore.setAuth(response.token, response.user)
-    authStore.closeAuthModal()
-    emit('update:open', false)
-    message.success(isRegister.value ? '注册成功' : '登录成功')
-    resetForm()
-  } catch (error: unknown) {
-    const maybe = error as {
-      response?: { data?: { detail?: string; message?: string } }
-      message?: string
-    }
-    errorMessage.value = maybe?.response?.data?.detail || maybe?.response?.data?.message || maybe?.message || '操作失败，请稍后重试'
-  } finally {
-    isSubmitting.value = false
-  }
-}
-
-watch(
-  () => props.open,
-  (open) => {
-    if (open) {
-      errorMessage.value = ''
-      return
-    }
-    resetForm()
-    isRegister.value = true
-  },
-)
 </script>
 
 <style scoped lang="scss">
@@ -532,13 +432,6 @@ watch(
   font-size: 12px;
   line-height: 20px;
   width: 100%;
-}
-
-.auth-error-text {
-  color: #ff4d4f;
-  font-size: 12px;
-  line-height: 20px;
-  margin-top: -8px;
 }
 
 .auth-agreement a {

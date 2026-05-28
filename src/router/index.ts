@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { pinia } from '@/stores/pinia'
+import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -31,6 +33,15 @@ const router = createRouter({
       ],
     },
   ],
+})
+
+router.beforeEach((to) => {
+  if (to.path !== '/asset') return true
+  const authStore = useAuthStore(pinia)
+  if (!authStore.isLoggedIn) {
+    authStore.openAuthModal()
+  }
+  return true
 })
 
 export default router

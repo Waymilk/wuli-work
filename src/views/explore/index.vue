@@ -1,7 +1,7 @@
 <template>
   <div class="explore-page">
     <PageTitle />
-    <GenerateTabPanel />
+    <GenerateTabPanel pollMode="external" modelsFetchMode="explore" @task-created="onTaskCreated" />
     <BannerSection />
     <GallerySection />
     <div style="width: 100%; height: 1200px"></div>
@@ -10,9 +10,20 @@
 
 <script setup lang="ts">
 import GenerateTabPanel from '@/components/GenerateTabPanel.vue'
+import type { GenerateTaskCreatedPayload } from '@/stores/generateTasks'
+import { useGenerateTasksStore } from '@/stores/generateTasks'
+import { useRouter } from 'vue-router'
 import PageTitle from './components/PageTitle.vue'
 import BannerSection from './components/BannerSection.vue'
 import GallerySection from './components/GallerySection.vue'
+
+const router = useRouter()
+const generateTasksStore = useGenerateTasksStore()
+
+function onTaskCreated(payload: GenerateTaskCreatedPayload) {
+  generateTasksStore.enqueueTask(payload)
+  void router.push('/generate')
+}
 </script>
 
 <style scoped lang="scss">

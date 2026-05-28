@@ -19,6 +19,7 @@ import {
   Tabs,
   RangePicker,
   Form,
+  Upload,
 } from 'ant-design-vue'
 
 type ComponentLike = unknown
@@ -61,4 +62,6 @@ export const registerAntd = (app: App) => {
   register(app, 'ARangePicker', RangePicker)
   register(app, 'AForm', Form)
   register(app, 'AFormItem', Form.Item)
+  register(app, 'AUpload', Upload)
+
 }

@@ -6,7 +6,15 @@ const fastStartup = process.env.FAST_STARTUP === '1'
 
 export default defineConfig({
   plugins: [vue()],
-  server: {},
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://121.43.53.154:8088',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
   optimizeDeps: {
     entries: ['index.html'],
     noDiscovery: true,

@@ -375,15 +375,17 @@
 
 <script setup lang="ts">
 import { createFromIconfontCN } from '@ant-design/icons-vue'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AuthLoginModal from '@/components/AuthLoginModal.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
 })
 
 const route = useRoute()
+const authStore = useAuthStore()
 
 const menuItems = [
   {
@@ -418,7 +420,6 @@ const menuItems = [
 
 const inviteModalOpen = ref(false)
 const avatarModalOpen = ref(false)
-const authModalOpen = ref(false)
 const apiModalOpen = ref(false)
 const feedbackModalOpen = ref(false)
 const accountModalOpen = ref(false)
@@ -431,11 +432,18 @@ let themeSubmenuTimer: ReturnType<typeof setTimeout> | null = null
 
 const messagePanelRef = ref<HTMLElement | null>(null)
 const messageBtnRef = ref<HTMLElement | null>(null)
+const authModalOpen = computed({
+  get: () => authStore.authModalOpen,
+  set: (value: boolean) => {
+    if (value) authStore.openAuthModal()
+    else authStore.closeAuthModal()
+  },
+})
 
 const activeIcon = (item: { path: string; icon: string; activeIcon?: string }) =>
   route.path === item.path && item.activeIcon ? item.activeIcon : item.icon
 
-const isLoggedIn = ref(typeof window !== 'undefined' && window.localStorage.getItem('wuli_logged_in') === '1')
+const isLoggedIn = computed(() => authStore.isLoggedIn)
 
 const openInviteModal = () => {
   inviteModalOpen.value = true
@@ -446,7 +454,7 @@ const handleAvatarClick = () => {
     avatarModalOpen.value = true
     return
   }
-  authModalOpen.value = true
+  authStore.openAuthModal()
 }
 
 const toggleMessagePanel = () => {
@@ -461,6 +469,10 @@ const onMoreMenuAction = (key: string) => {
   }
   if (key === 'account') {
     accountModalOpen.value = true
+  }
+  if (key === 'logout') {
+    authStore.clearAuth()
+    authStore.closeAuthModal()
   }
 }
 
@@ -519,6 +531,16 @@ const handleGlobalPointer = (event: MouseEvent) => {
 onMounted(() => {
   document.addEventListener('mousedown', handleGlobalPointer)
 })
+
+watch(
+  () => [route.path, isLoggedIn.value] as const,
+  ([path, loggedIn]) => {
+    if (path === '/asset' && !loggedIn) {
+      authStore.openAuthModal()
+    }
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleGlobalPointer)

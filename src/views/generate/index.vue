@@ -4,21 +4,21 @@
       <div class="generate-container">
         <section class="history-section">
           <div ref="scrollContainerRef" class="scroll-container" @scroll="handleScroll">
-            <article class="history-item">
+            <article v-for="item in historyItems" :key="item.taskId" class="history-item">
               <div class="prompt-section">
-                <div class="input-image-stack" style="--img-count: 1; --stack-count: 1">
+                <div v-if="item.inputImages.length" class="input-image-stack" style="--img-count: 1; --stack-count: 1">
                   <div class="input-image-stack-item" style="--index: 0">
-                    <img class="input-image" :src="ASSET_BASE + '/eb0891ddd3c640a28ae0c7008df4c184.png'" alt="IMAGE1" />
+                    <img class="input-image" :src="item.inputImages[0]" alt="IMAGE1" />
                     <img
                       class="input-image-check-icon"
-                      :src="ASSET_BASE + '/O1CN01jL39pm1uM8Dc0zKLu_!!6000000006022-55-tps-18-17.svg'"
+                      src="/wuli-generate-assets/O1CN01jL39pm1uM8Dc0zKLu_!!6000000006022-55-tps-18-17.svg"
                       alt="add-icon"
                     />
                   </div>
                 </div>
 
                 <div class="prompt-text-wrap">
-                  <div class="prompt-text">生成 q 版</div>
+                  <div class="prompt-text">{{ item.prompt }}</div>
                   <div class="prompt-tags">
                     <button type="button" class="prompt-tag">
                       <IconFont type="icon-shiyongtishici" />
@@ -34,28 +34,24 @@
 
               <div class="meta-info">
                 <div class="meta-item">
-                  <img
-                    class="meta-icon"
-                    :src="ASSET_BASE + '/O1CN019kduFV1WbCTG2RP8P_!!6000000002806-55-tps-16-16.svg'"
-                    alt="Qwen Image 2.0"
-                  />
-                  <span>Qwen Image 2.0</span>
+                  <span>{{ item.modelLabel }}</span>
                 </div>
                 <div class="meta-item"><span>智能匹配</span></div>
-                <div class="meta-item"><span>2K</span></div>
-                <div class="meta-item"><span>1728 x 4032</span></div>
+                <div class="meta-item"><span>{{ item.sizeLabel }}</span></div>
+                <div class="meta-item"><span>{{ item.countLabel }}</span></div>
+                <div class="meta-item"><span>{{ item.ratioLabel }}</span></div>
               </div>
 
-              <div class="grid-wrap" style="--result-aspect-ratio: 9/21">
+              <div class="grid-wrap" :style="{ '--result-aspect-ratio': aspectRatioCss(item.aspectRatio || item.ratioLabel) }">
                 <div
-                  v-for="(img, idx) in previewImages"
-                  :key="img"
+                  v-for="slotIndex in slotCount(item)"
+                  :key="`${item.taskId}-slot-${slotIndex}`"
                   class="grid-item"
-                  :class="itemClass(idx)"
-                  @click="openPreviewDetail(idx)"
+                  :class="[itemClass(slotIndex - 1, slotCount(item)), { 'is-loading-slot': !item.resultImages[slotIndex - 1] }]"
+                  @click="item.resultImages[slotIndex - 1] ? openPreviewDetail(item.taskId, slotIndex - 1) : undefined"
                 >
-                  <div class="grid-item-content">
-                    <img class="grid-image" :src="ASSET_BASE + '/' + img" :alt="`preview-${idx + 1}`" />
+                  <div v-if="item.resultImages[slotIndex - 1]" class="grid-item-content">
+                    <img class="grid-image" :src="item.resultImages[slotIndex - 1]" :alt="`preview-${slotIndex}`" />
 
                     <div class="grid-image-actions">
                       <button type="button" class="grid-image-action" aria-label="下载" @click.stop.prevent="noopAction">
@@ -86,6 +82,13 @@
                       </button>
                     </div>
                   </div>
+
+                  <div v-else class="grid-item-content pending-grid-content">
+                    <ASkeletonImage class="pending-skeleton-image" :active="item.status !== 'FAILED' && item.status !== 'CANCELLED'" />
+                    <div class="pending-title">{{ pendingTitle(item) }}</div>
+                    <div class="pending-subtitle">{{ pendingSubtitle(item) }}</div>
+                    <ASpin v-if="item.status !== 'FAILED' && item.status !== 'CANCELLED'" size="small" />
+                  </div>
                 </div>
               </div>
 
@@ -98,11 +101,12 @@
                   <IconFont type="icon-zaicishengcheng" />
                   <span>再次生成</span>
                 </button>
-                <button type="button" class="action-button icon-only" aria-label="删除">
+                <button type="button" class="action-button icon-only" aria-label="删除" @click="removeHistoryItem(item.taskId)">
                   <IconFont type="icon-shanchu" />
                 </button>
               </div>
             </article>
+            <div v-if="!historyItems.length" class="history-empty">暂无历史任务，先去生成一条吧</div>
           </div>
         </section>
 
@@ -112,7 +116,13 @@
               <span>回到底部</span>
               <IconFont type="icon-down" />
             </button>
-            <GenerateTabPanel class="generate-tab-panel"  v-model:showMini="showMini" />
+            <GenerateTabPanel
+              class="generate-tab-panel"
+              v-model:showMini="showMini"
+              pollMode="external"
+              modelsFetchMode="cache"
+              @task-created="onTaskCreated"
+            />
           </div>
         </section>
 
@@ -127,9 +137,13 @@
 
 <script setup lang="ts">
 import { createFromIconfontCN } from '@ant-design/icons-vue'
+import { Skeleton as ASkeleton, Spin as ASpin } from 'ant-design-vue'
 import GenerateTabPanel from '@/components/GenerateTabPanel.vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import InspirationDetailModal, { type InspirationDetailItem } from '@/components/InspirationDetailModal.vue'
+import { useGenerateTasksStore, type GenerateHistoryItem, type GenerateTaskCreatedPayload } from '@/stores/generateTasks'
+
+const ASkeletonImage = ASkeleton.Image
 
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
@@ -139,6 +153,8 @@ const scrollContainerRef = ref<HTMLElement | null>(null)
 const showMini = ref(false)
 const detailOpen = ref(false)
 const detailItem = ref<InspirationDetailItem | null>(null)
+const generateTasksStore = useGenerateTasksStore()
+const historyItems = computed(() => generateTasksStore.items)
 
 const handleScroll = () => {
   if (scrollContainerRef.value) {
@@ -156,41 +172,68 @@ const scrollToBottom = () => {
   }
 }
 
-const ASSET_BASE = '/wuli-generate-assets'
+function onTaskCreated(payload: GenerateTaskCreatedPayload) {
+  generateTasksStore.enqueueTask(payload)
+}
 
-const previewImages = [
-  'b4ea5a59cb84522eab89803ac07329ca.jpeg',
-  'adfd71078ea1599faf8633d424158d96.jpeg',
-  '0b7c9b8b73705daf861ce2bb5901467f.jpeg',
-  'c6f4edc63aff5ae9ac2c79fcb38b01a2.jpeg',
-]
-
-const itemClass = (idx: number) => ({
+const itemClass = (idx: number, total: number) => ({
   'first-grid-item': idx === 0,
-  'last-grid-item': idx === previewImages.length - 1,
+  'last-grid-item': idx === total - 1,
 })
 
-const openPreviewDetail = (idx: number) => {
-  const thumbnails = previewImages.map((name, imageIndex) => ({
+const slotCount = (item: GenerateHistoryItem) => {
+  const expected = Number(item.expectedCount || 0)
+  const actual = item.resultImages.length
+  return Math.max(1, expected, actual)
+}
+
+const pendingTitle = (item: GenerateHistoryItem) => {
+  if (item.status === 'FAILED' || item.status === 'CANCELLED') return '生成失败'
+  if (item.resultImages.length > 0) return '继续生成中...'
+  return '生成中...'
+}
+
+const pendingSubtitle = (item: GenerateHistoryItem) => {
+  if (item.status === 'FAILED' || item.status === 'CANCELLED') {
+    return item.errorMessage || '任务执行失败'
+  }
+  return item.progressText || '任务正在处理'
+}
+
+const aspectRatioCss = (ratioLabel: string) => {
+  const match = String(ratioLabel || '').match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/)
+  if (!match) return '1/1'
+  return `${match[1]}/${match[2]}`
+}
+
+const openPreviewDetail = (taskId: string, idx: number) => {
+  const item = historyItems.value.find((row) => row.taskId === taskId)
+  if (!item || !item.resultImages.length) return
+
+  const thumbnails = item.resultImages.map((src, imageIndex) => ({
     id: `preview-${imageIndex}`,
-    src: `${ASSET_BASE}/${name}`,
+    src,
     type: 'IMAGE' as const,
   }))
 
   detailItem.value = {
     type: 'IMAGE',
-    src: `${ASSET_BASE}/${previewImages[idx]}`,
+    src: item.resultImages[idx] || item.resultImages[0],
     thumbnails,
-    avatar: `${ASSET_BASE}/eb0891ddd3c640a28ae0c7008df4c184.png`,
-    createdAt: '2026-04-28 10:45:20',
-    prompt: '生成 q 版',
-    model: 'Qwen Image 2.0',
+    avatar: item.inputImages[0],
+    createdAt: item.createdAt,
+    prompt: item.prompt,
+    model: item.modelLabel,
     primaryTag: '文生图',
-    ratioOrRes: '2K',
-    durationOrCount: '4张',
-    sizeLabel: '1728 x 4032',
+    ratioOrRes: item.ratioLabel,
+    durationOrCount: item.countLabel,
+    sizeLabel: item.sizeLabel,
   }
   detailOpen.value = true
+}
+
+const removeHistoryItem = (taskId: string) => {
+  generateTasksStore.removeTask(taskId)
 }
 
 const noopAction = () => {}
@@ -398,6 +441,45 @@ const noopAction = () => {}
   width: 100%;
 }
 
+.pending-grid-content {
+  align-items: center;
+  background: linear-gradient(135deg, #f8f8fc 0%, #f1f1f8 100%);
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  padding: 20px 16px;
+  text-align: center;
+}
+
+.pending-skeleton-image {
+  :deep(.ant-skeleton-image) {
+    border-radius: 8px;
+    height: min(42%, 160px);
+    width: min(72%, 200px);
+  }
+}
+
+.pending-title {
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.pending-subtitle {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  line-height: 20px;
+  margin-top: -2px;
+  max-width: 80%;
+}
+
+.is-loading-slot {
+  cursor: default;
+}
+
 .grid-item-content {
   height: 100%;
   overflow: hidden;
@@ -567,5 +649,14 @@ const noopAction = () => {}
   position: fixed;
   right: 0;
   text-align: center;
+}
+
+.history-empty {
+  align-items: center;
+  color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  font-size: 14px;
+  height: 200px;
+  justify-content: center;
 }
 </style>

@@ -24,7 +24,6 @@
             preload="metadata"
           />
           <img v-else class="detail-media" :src="currentMedia.src" alt="detail" />
-          <span class="detail-ai-badge">AI生成</span>
         </div>
 
         <div class="detail-rail">
@@ -358,21 +357,6 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
   object-fit: contain;
   width: auto;
 }
-
-.detail-ai-badge {
-  border: 1px solid rgba(255, 255, 255, 0.76);
-  border-radius: 10px;
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 40px;
-  font-weight: 300;
-  left: 34px;
-  line-height: 1.4;
-  padding: 2px 16px;
-  pointer-events: none;
-  position: absolute;
-  top: 22px;
-}
-
 
 .thumbnailList {
   display: flex;

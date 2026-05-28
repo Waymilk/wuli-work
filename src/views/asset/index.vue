@@ -99,10 +99,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { DeleteOutlined, DownloadOutlined, StarFilled, StarOutlined } from '@ant-design/icons-vue'
 import AssetTopToolbar from './components/AssetTopToolbar.vue'
 import InspirationDetailModal, { type InspirationDetailItem } from '@/components/InspirationDetailModal.vue'
+import type { BackendModelRecord } from '@/types/backend-model'
+import { useModelsStore } from '@/stores/models'
 
 type AssetType = 'IMAGE' | 'VIDEO'
 type FilterType = 'ALL' | AssetType
@@ -124,30 +126,12 @@ const typeTabs = [
   { key: 'VIDEO', label: '视频' },
 ] as const
 
-const modelOptions = [
-  '全部',
-  '可灵 3.0',
-  '可灵 3.0 Omni',
-  'Qwen Image 25.11',
-  'Qwen Image 2.0',
-  'Qwen Image 25.12',
-  'Happy Horse 1.0',
-  'Qwen Image 25.08',
-  'Seedream 5.0 Lite',
-  'Seedance 1.0 Pro',
-  '可灵 2.5 Turbo',
-  'Seedance 1.5 Pro',
-  'Seedream 4.5',
-  'MiniMax Hailuo 2.3',
-  '通义万相 2.6',
-  '通义万相 2.7',
-  '通义万相 2.2 Turbo',
-  '通义万相 2.6 Flash',
-  'Qwen Image Turbo',
-  '可灵 2.6',
-  '可灵 O1',
-  'MiniMax Hailuo 2.3 Fast',
-]
+const modelsStore = useModelsStore()
+const modelOptions = computed(() => {
+  const imageModels = (modelsStore.modelsResponse?.database?.image || []).filter(isModelActive).map(resolveModelLabel)
+  const videoModels = (modelsStore.modelsResponse?.database?.video || []).filter(isModelActive).map(resolveModelLabel)
+  return Array.from(new Set([...imageModels, ...videoModels].filter(Boolean)))
+})
 
 const assets = ref<AssetItem[]>([
   {
@@ -275,7 +259,7 @@ const assets = ref<AssetItem[]>([
 const activeType = ref<FilterType>('ALL')
 const onlyFavorite = ref(false)
 const searchQuery = ref('')
-const selectedModels = ref<string[]>(['全部'])
+const selectedModels = ref<string[]>([])
 const timePreset = ref('all')
 const batchMode = ref(false)
 const selectedAssetIds = ref<string[]>([])
@@ -291,7 +275,7 @@ const filteredAssets = computed(() => {
     if (activeType.value !== 'ALL' && item.type !== activeType.value) return false
     if (onlyFavorite.value && !item.isFavorite) return false
 
-    if (selectedModels.value.length && !selectedModels.value.includes('全部')) {
+    if (selectedModels.value.length) {
       if (!selectedModels.value.includes(item.model)) return false
     }
 
@@ -403,6 +387,21 @@ const handleBatchAction = (action: 'favorite' | 'download' | 'delete') => {
 }
 
 const noopAction = () => undefined
+
+const resolveModelLabel = (record: BackendModelRecord) => {
+  return record.name?.trim() || ''
+}
+
+const isModelActive = (record: BackendModelRecord) => record.is_active !== false
+
+async function loadModelOptions() {
+  await modelsStore.ensureForOtherPage()
+  selectedModels.value = selectedModels.value.filter((item) => modelOptions.value.includes(item))
+}
+
+onMounted(() => {
+  void loadModelOptions()
+})
 </script>
 
 <style scoped lang="scss">

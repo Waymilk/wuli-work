@@ -21,10 +21,30 @@
 
     <div class="panel-body" :class="{'mini':showMini}">
       <div class="input-row">
-        <label class="upload-btn" :title="isVideo ? '上传首帧' : '上传参考图'">
-          <span class="upload-plus">+</span>
-          <input type="file" accept="image/*" multiple />
-        </label>
+        <div class="upload-wrapper">
+        <AUpload
+          accept="image/*"
+          :max-count="1"
+          :show-upload-list="false"
+          :before-upload="beforeReferenceUpload"
+          v-model:file-list="uploadFileList"
+          @change="onReferenceUploadChange"
+        >
+          <div class="upload-btn" :class="{ 'has-image': !!referenceImagePreviewUrl }" :title="isVideo ? '上传首帧' : '上传参考图'">
+            <img
+              v-if="referenceImagePreviewUrl"
+              class="upload-preview"
+              :src="referenceImagePreviewUrl"
+              alt="上传预览"
+              @click.stop.prevent="onPreviewReferenceImage"
+            />
+            <span v-else class="upload-plus">+</span>
+            <span class="upload-tag" v-if="isVideo">首帧</span>
+
+            <button v-if="referenceImagePreviewUrl" class="upload-remove-btn" type="button" @click.stop.prevent="onRemoveReferenceImage">×</button>
+          </div>
+        </AUpload>
+        </div>
 
         <div class="editor-wrap">
           <textarea
@@ -65,11 +85,19 @@
                 </div>
 
                 <div class="model-list">
+                  <div v-if="isModelsLoading" class="model-empty">
+                    <span>模型加载中...</span>
+                  </div>
+                  <div v-else-if="modelsLoadError || !visibleModels.length" class="model-empty">
+                    <span>{{ modelsLoadError || '暂无可用模型' }}</span>
+                    <button class="retry-btn" @click="onRetryLoadModels">重试</button>
+                  </div>
                   <button
+                    v-else
                     v-for="modelItem in visibleModels"
                     :key="modelItem.id"
                     class="model-card"
-                    :class="{ active: modelItem.name === currentModel.name }"
+                    :class="{ active: modelItem.id === currentModel?.id }"
                     @click="selectModel(modelItem)"
                   >
                     <img class="model-card-icon" :src="modelItem.icon" :alt="modelItem.name" />
@@ -96,10 +124,10 @@
               </div>
             </template>
 
-            <button class="control model" :class="{ open: modelOpen }">
+            <button class="control model" :class="{ open: modelOpen }" :disabled="!hasModeModels || isModelsLoading">
               <span class="model-selected-label">
-                <img :src="currentModel.icon" :alt="currentModel.name" />
-                <span class="name">{{ currentModel.name }}</span>
+                <img :src="selectedModelIcon" :alt="selectedModelName" />
+                <span class="name">{{ selectedModelName }}</span>
               </span>
               <DownOutlined class="arrow" />
             </button>
@@ -116,7 +144,7 @@
           >
             <template #content>
               <div class="smart-popover-inner" :class="{ 'is-image': !isVideo, 'is-video': isVideo }">
-                <div class="block">
+                <div v-if="ratioOptions.length" class="block">
                   <div class="label">{{ isVideo ? '视频比例' : '图片比例' }}</div>
                   <div class="options ratio" :class="{ image: !isVideo }">
                     <button
@@ -129,18 +157,18 @@
                       <span class="ratio-icon">
                         <IconFont :type="ratioIconType(ratio)" class="ratio-smart-icon" />
                       </span>
-                      <span>{{ ratio }}</span>
+                      <span>{{ ratioDisplayText(ratio) }}</span>
                     </button>
                   </div>
                 </div>
 
-                <div class="block">
+                <div v-if="sizeOptions.length" class="block">
                   <div class="label">分辨率</div>
-                  <div class="options split2">
+                  <div class="options">
                     <button
                       v-for="size in sizeOptions"
                       :key="size"
-                      class="opt"
+                      class="opt size-opt"
                       :class="{ active: size === selectedSize }"
                       @click="selectedSize = size"
                     >
@@ -149,7 +177,7 @@
                   </div>
                 </div>
 
-                <div class="block">
+                <div v-if="countOptions.length" class="block">
                   <div class="label">{{ isVideo ? '视频时长' : '生成数量' }}</div>
                   <div class="options split3" :class="{ image: !isVideo }">
                     <button
@@ -159,64 +187,27 @@
                       :class="{ active: qty === selectedCount }"
                       @click="selectedCount = qty"
                     >
-                      {{ qty }}
+                      {{ countDisplayText(qty) }}
                     </button>
                   </div>
                 </div>
               </div>
             </template>
 
-            <button class="control smart" :class="{ open: smartOpen }">
+            <button class="control smart" :class="{ open: smartOpen }" :disabled="!hasSmartOptions">
               <span class="pill-text">
                 <span class="smart-label">
-                  <IconFont type="icon-zhinengbili" class="pill-icon" />
-                  <span>智能匹配</span>
+                  <IconFont :type="ratioIconType(smartLabelText)" class="pill-icon" />
+                  <span>{{ smartLabelText }}</span>
                 </span>
-                <span class="pill-divider"></span>
-                <span>{{ selectedSize }}</span>
-                <span class="pill-divider"></span>
-                <span>{{ selectedCount }}</span>
+                <template v-for="(value, index) in smartPillValues" :key="`pill-${index}-${value}`">
+                  <span class="pill-divider"></span>
+                  <span>{{ value }}</span>
+                </template>
               </span>
               <DownOutlined class="arrow" />
             </button>
           </a-popover>
-
-          <div v-if="isVideo" class="frame-select-wrap">
-            <a-select
-              v-model:value="frameMode"
-              class="frame-select"
-              popup-class-name="wuli-frame-select-dropdown"
-              dropdown-class-name="wuli-frame-select-dropdown"
-              :bordered="false"
-              :placement="'bottomLeft'"
-              :getPopupContainer="getPopupContainer"
-              @dropdown-visible-change="onFrameDropdownVisibleChange"
-            >
-              <template #suffixIcon>
-                <DownOutlined class="arrow" />
-              </template>
-              <a-select-option
-                v-for="item in frameOptions"
-                :key="item.value"
-                :value="item.value"
-                :disabled="item.disabled"
-                :label="item.label"
-              >
-                <span
-                  class="frame-option-label"
-                  style="display:inline-flex;align-items:center;gap:4px;font-size:12px;line-height:20px;"
-                >
-                  <IconFont
-                    :type="item.icon"
-                    class="frame-item-icon"
-                    style="font-size:16px;color:rgba(0,0,0,0.65);"
-                  />
-                  <span>{{ item.label }}</span>
-                </span>
-              </a-select-option>
-            </a-select>
-            <!-- <IconFont :type="currentFrameOption.icon" class="frame-select-leading-icon" /> -->
-          </div>
 
           <a-popover
             v-if="isVideo"
@@ -242,48 +233,152 @@
         </div>
 
         <div class="right-controls">
-          <a-button type="text" class="translate" @click="onTranslate">
+          <!-- <a-button type="text" class="translate" @click="onTranslate">
             <IconFont type="icon-fanyi" class="translate-icon" />
             <span>翻译</span>
-          </a-button>
+          </a-button> -->
 
-          <a-button type="primary" class="generate" :disabled="!canGenerate" @click="onGenerate">
-            生成
+          <a-button
+            type="primary"
+            class="generate"
+            :class="{ 'has-cost': showGenerateCost }"
+            :loading="isSubmitting"
+            :disabled="!canGenerate || isSubmitting"
+            @click="onGenerate"
+          >
+            <transition name="generate-label" mode="out-in">
+              <span :key="generateButtonLabelKey" class="generate-label-wrap">
+                <span v-if="isSubmitting">提交中</span>
+                <span v-else-if="showGenerateCost" class="generate-cost">
+                  <img :src="creditsIcon" alt="积分" class="credits-icon" />
+                  <span>{{ generateCostText }}</span>
+                </span>
+                <span v-else>生成</span>
+              </span>
+            </transition>
           </a-button>
         </div>
       </div>
     </div>
+
+    <a-modal v-model:open="previewModalOpen" :footer="null" width="560px" class="reference-preview-modal">
+      <img class="reference-preview-modal-image" :src="referenceImagePreviewUrl" alt="参考图预览" />
+    </a-modal>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { message } from 'ant-design-vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Upload as AUpload, message } from 'ant-design-vue'
+import type { UploadProps } from 'ant-design-vue'
 import { DownOutlined, createFromIconfontCN } from '@ant-design/icons-vue'
+import request from '@/utils/request'
+import creditsIcon from '@/assets/credits.svg'
+import { useModelsStore } from '@/stores/models'
+import type {
+  BackendModelConfig,
+  BackendModelRecord,
+  BackendModelOptions,
+  ModelOptionPrimitive,
+  ModelOptionValue,
+} from '@/types/backend-model'
 
 type ModeKey = 'IMAGE' | 'VIDEO'
 type PopoverName = 'model' | 'smart' | 'at'
 type ImgModelTab = 'txt2img' | 'ref2img'
 type VidModelTab = 'txt2video' | 'img2video' | 'vid2video'
 type ModelTabKey = ImgModelTab | VidModelTab
-type FrameMode = 'FF_2_VIDEO' | 'FLF_2_VIDEO' | 'REF_2_VIDEO'
+type PollMode = 'internal' | 'external'
+type ModelsFetchMode = 'explore' | 'cache'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   showMini?: boolean
-}>()
+  pollMode?: PollMode
+  modelsFetchMode?: ModelsFetchMode
+}>(), {
+  pollMode: 'internal',
+  modelsFetchMode: 'cache',
+})
 
 const emit = defineEmits<{
   (e: 'update:showMini', value: boolean): void
+  (e: 'task-created', payload: TaskCreatedEventPayload): void
+  (e: 'task-progress', payload: { taskId: string; status: string; progress?: number; progressText?: string }): void
+  (e: 'task-succeeded', payload: { taskId: string; artifacts: TaskArtifact[] }): void
+  (e: 'task-failed', payload: { taskId: string; status: string; error: string }): void
 }>()
 
 interface ModelItem {
   id: string
+  modelId: number
+  taskType?: string
+  runwayModel?: string
+  costPerGeneration?: number
+  isActive: boolean
   name: string
   vendor: string
-  desc: string
+  desc?: string
   icon: string
   caps: Array<'text' | 'ref' | 'video'>
   tags?: string[]
+  options: {
+    ratios: string[]
+    imageSizes: string[]
+    numImages: string[]
+    resolutions: string[]
+    durations: string[]
+  }
+}
+
+interface ImageTaskPayload {
+  prompt: string
+  model_id: number
+  task_type: string
+  model_name: string
+  aspect_ratio: string
+  num_images: number
+  image_size: string
+}
+
+interface TaskCreatedEventPayload {
+  taskId: string
+  payload: ImageTaskPayload
+  displayMeta: {
+    prompt: string
+    modelLabel: string
+    ratioLabel: string
+    sizeLabel: string
+    countLabel: string
+  }
+  inputImages?: string[]
+  expectedCount: number
+}
+
+interface TaskCreateResponse {
+  success?: boolean
+  task_id?: string
+  status?: string
+  error?: unknown
+  detail?: string
+}
+
+interface TaskArtifact {
+  id?: string
+  url?: string
+  preview_urls?: string[]
+  filename?: string
+  file_size?: number
+  metadata?: Record<string, unknown>
+}
+
+interface TaskStatusResponse {
+  success?: boolean
+  status?: string
+  progress?: number
+  progress_text?: string
+  artifacts?: TaskArtifact[]
+  error?: unknown
+  detail?: string
 }
 
 const IconFont = createFromIconfontCN({
@@ -294,8 +389,7 @@ const IMAGE_SELECTED_ICON = 'https://img.alicdn.com/imgextra/i2/O1CN01rrNjSw28BV
 const VIDEO_ICON  = 'https://img.alicdn.com/imgextra/i4/O1CN01ynewsn217CdigVvUG_!!6000000006937-55-tps-16-16.svg'
 const VIDEO_SELECTED_ICON = 'https://img.alicdn.com/imgextra/i1/O1CN01ADDbzu1mKk75ZHjet_!!6000000004936-55-tps-16-16.svg'
 const QWEN_ICON = 'https://img.alicdn.com/imgextra/i1/O1CN019kduFV1WbCTG2RP8P_!!6000000002806-55-tps-16-16.svg'
-const SEEDREAM_ICON = 'https://img.alicdn.com/imgextra/i4/O1CN01z9hNwL1w7mQxj6k2V_!!6000000006264-55-tps-16-16.svg'
-const HAPPY_HORSE_ICON = 'https://img.alicdn.com/imgextra/i2/O1CN01CHQQzM1otcX7xR6gM_!!6000000005278-55-tps-16-16.svg'
+const VIDEO_MODEL_ICON = 'https://img.alicdn.com/imgextra/i2/O1CN01CHQQzM1otcX7xR6gM_!!6000000005278-55-tps-16-16.svg'
 
 const mode = ref<ModeKey>('IMAGE')
 const prompt = ref('')
@@ -307,16 +401,9 @@ const atOpen = ref(false)
 const imageModelTab = ref<ImgModelTab>('txt2img')
 const videoModelTab = ref<VidModelTab>('txt2video')
 
-const frameOptions = [
-  { value: 'FF_2_VIDEO' as FrameMode, label: '首帧', icon: 'icon-Outlined-shouzhen', disabled: false },
-  { value: 'FLF_2_VIDEO' as FrameMode, label: '首尾帧', icon: 'icon-Outlined-shouweizhen', disabled: true },
-  { value: 'REF_2_VIDEO' as FrameMode, label: '全能参考', icon: 'icon-Outlined-quannengcankao', disabled: false },
-]
-const frameMode = ref<FrameMode>('FF_2_VIDEO')
-
-const selectedRatio = ref('智能')
-const selectedSize = ref('高清2K')
-const selectedCount = ref('4张')
+const selectedRatio = ref('auto')
+const selectedSize = ref('')
+const selectedCount = ref('4')
 
 const imageModelTabs: Array<{ key: ImgModelTab; label: string; icon: string }> = [
   { key: 'txt2img', label: '文生图', icon: 'icon-Outlined-wensheng' },
@@ -328,37 +415,12 @@ const videoModelTabs: Array<{ key: VidModelTab; label: string; icon: string }> =
   { key: 'vid2video', label: '视频生视频', icon: 'icon-down' },
 ]
 
-const imageModels: ModelItem[] = [
-  { id: 'gemini-3.1-flash', name: 'Nano Banana 2', vendor: 'Google', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'gemini-3-pro', name: 'Nano Banana Pro', vendor: 'Google', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'gemini-2.5-flash', name: 'Nano Banana', vendor: 'Google', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'gpt-image-2', name: 'GPT Image 2', vendor: 'OpenAI', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'gpt-image-1.5', name: 'GPT Image 1.5', vendor: 'OpenAI', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'grok-imagine', name: 'Grok Imagine', vendor: 'xAI', desc: '支持图生图、文生图', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'gen-4-turbo', name: 'Gen-4 Turbo', vendor: 'Runway', desc: '支持图生图', icon: SEEDREAM_ICON, caps: ['ref'], tags: ['参考生图'] },
-  { id: 'gen-4', name: 'Gen-4', vendor: 'Runway', desc: '支持图生图、文生图', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'bfl-flux-2-max', name: 'FLUX.2 Max', vendor: 'BFL', desc: '支持图生图、文生图', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'bfl-flux-2-klein', name: 'FLUX.2 Klein', vendor: 'BFL', desc: '支持图生图、文生图', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-  { id: 'seedream-5', name: 'Seedream 5.0', vendor: '字节', desc: '支持图生图、文生图', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生图', '参考生图'] },
-]
-
-const videoModels: ModelItem[] = [
-  { id: 'happy-horse-1', name: 'Happy Horse 1.0', vendor: '阿里巴巴', desc: '支持图生视频、文生视频', icon: HAPPY_HORSE_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
-  { id: 'seedance-2', name: 'Seedance 2.0', vendor: '字节', desc: '支持视频生视频、图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref', 'video'], tags: ['文生视频', '图生视频', '视频生视频'] },
-  { id: 'gen-4-5', name: 'Gen-4.5', vendor: 'Runway', desc: '支持图生视频、文生视频', icon: QWEN_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
-  { id: 'gen-4-turbo', name: 'Gen-4 Turbo', vendor: 'Runway', desc: '支持图生视频', icon: QWEN_ICON, caps: ['ref'], tags: ['图生视频'] },
-  { id: 'gen-4', name: 'Gen-4', vendor: 'Runway', desc: '支持图生视频', icon: QWEN_ICON, caps: ['ref'], tags: ['图生视频'] },
-  { id: 'kling-o3-4k', name: 'Kling O3 4K', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
-  { id: 'kling-o3-pro', name: 'Kling O3 Pro', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
-  { id: 'kling-o3-standard', name: 'Kling O3 Standard', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
-  { id: 'kling-3-0-4k', name: 'Kling 3.0 4K', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
-  { id: 'kling-3-0-pro', name: 'Kling 3.0 Pro', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
-  { id: 'kling-3-0-standard', name: 'Kling 3.0 Standard', vendor: 'Kling', desc: '支持图生视频、文生视频', icon: SEEDREAM_ICON, caps: ['text', 'ref'], tags: ['文生视频', '图生视频'] },
-  { id: 'wan-2-6', name: 'WAN 2.6', vendor: 'WAN', desc: '支持图生视频', icon: QWEN_ICON, caps: ['ref'], tags: ['图生视频'] },
-  { id: 'wan-2-6-flash', name: 'WAN 2.6 Flash', vendor: 'WAN', desc: '支持图生视频', icon: QWEN_ICON, caps: ['ref'], tags: ['图生视频'] },
-]
-
-const currentModel = ref<ModelItem>(imageModels[0])
+const modelsStore = useModelsStore()
+const imageModels = ref<ModelItem[]>([])
+const videoModels = ref<ModelItem[]>([])
+const currentModel = ref<ModelItem | null>(null)
+const isModelsLoading = computed(() => modelsStore.isLoading)
+const modelsLoadError = computed(() => modelsStore.error)
 
 const isVideo = computed(() => mode.value === 'VIDEO')
 const placeholder = computed(() => isVideo.value
@@ -366,30 +428,588 @@ const placeholder = computed(() => isVideo.value
   : '请输入你的创意（按 Enter 发送，Shift+Enter 换行）')
 
 const activeModelTab = computed<ModelTabKey>(() => (mode.value === 'IMAGE' ? imageModelTab.value : videoModelTab.value))
+const modeModels = computed(() => (mode.value === 'IMAGE' ? imageModels.value : videoModels.value))
+const hasModeModels = computed(() => modeModels.value.length > 0)
+const selectedModelName = computed(() => currentModel.value?.name || (isModelsLoading.value ? '加载中...' : '请选择模型'))
+const selectedModelIcon = computed(() => currentModel.value?.icon || (mode.value === 'IMAGE' ? QWEN_ICON : VIDEO_MODEL_ICON))
 
 const visibleModels = computed(() => {
   if (mode.value === 'IMAGE') {
-    return imageModels.filter((item) => (imageModelTab.value === 'txt2img' ? item.caps.includes('text') : item.caps.includes('ref')))
+    return imageModels.value.filter((item) => (imageModelTab.value === 'txt2img' ? item.caps.includes('text') : item.caps.includes('ref')))
   }
-  if (videoModelTab.value === 'txt2video') return videoModels.filter((item) => item.caps.includes('text'))
-  if (videoModelTab.value === 'img2video') return videoModels.filter((item) => item.caps.includes('ref'))
-  return videoModels.filter((item) => item.caps.includes('video'))
+  if (videoModelTab.value === 'txt2video') return videoModels.value.filter((item) => item.caps.includes('text'))
+  if (videoModelTab.value === 'img2video') return videoModels.value.filter((item) => item.caps.includes('ref'))
+  return videoModels.value.filter((item) => item.caps.includes('video'))
 })
 
-const ratioOptions = computed(() => (isVideo.value
-  ? ['智能', '9:16', '3:4', '1:1', '4:3', '16:9']
-  : ['智能', '9:21', '9:16', '2:3', '3:4', '1:1', '4:3', '3:2', '16:9', '21:9']))
-
-const sizeOptions = computed(() => (isVideo.value ? ['720P', '1080P'] : ['高清2K', '超清4K']))
-const countOptions = computed(() => (isVideo.value ? ['5s', '10s', '15s'] : ['1张', '2张', '3张', '4张']))
-const canGenerate = computed(() => prompt.value.trim().length > 0)
+const ratioOptions = computed(() => currentModel.value?.options.ratios || [])
+const sizeOptions = computed(() => (isVideo.value
+  ? (currentModel.value?.options.resolutions || [])
+  : (currentModel.value?.options.resolutions || [])))
+const countOptions = computed(() => (isVideo.value
+  ? (currentModel.value?.options.durations || [])
+  : (currentModel.value?.options.numImages || [])))
+const hasSmartOptions = computed(() => ratioOptions.value.length > 0 || sizeOptions.value.length > 0 || countOptions.value.length > 0)
+const smartLabelText = computed(() => ratioDisplayText(selectedRatio.value || 'auto'))
+const smartPillValues = computed(() => [selectedSize.value, countDisplayText(selectedCount.value)].filter((item) => Boolean(item)))
+const hasPrompt = computed(() => prompt.value.trim().length > 0)
+const canGenerate = computed(() => hasPrompt.value && Boolean(currentModel.value) && !isModelsLoading.value)
+const generateCost = computed(() => currentModel.value?.costPerGeneration)
+const hasGenerateCost = computed(() => typeof generateCost.value === 'number')
+const showGenerateCost = computed(() => !isSubmitting.value && hasPrompt.value && Boolean(currentModel.value))
+const generateButtonLabelKey = computed(() => {
+  if (isSubmitting.value) return 'submitting'
+  if (showGenerateCost.value) return `cost-${generateCost.value}`
+  return 'default'
+})
+const generateCostText = computed(() => {
+  if (!hasGenerateCost.value) return '--'
+  return String(generateCost.value)
+})
+const referenceImageFile = ref<File | null>(null)
+const uploadFileList = ref<NonNullable<UploadProps['fileList']>>([])
+const referenceImagePreviewUrl = ref('')
+const previewModalOpen = ref(false)
+const isSubmitting = ref(false)
+const isPolling = ref(false)
+const currentTaskId = ref<string | null>(null)
+const pollTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const pollAbortFlag = ref(false)
 
 function getPopupContainer(trigger: HTMLElement): HTMLElement {
   return trigger.parentElement || document.body
 }
 
+const beforeReferenceUpload: UploadProps['beforeUpload'] = () => false
+
+const onReferenceUploadChange: UploadProps['onChange'] = (info) => {
+  const nextList = info.fileList.slice(-1)
+  uploadFileList.value = nextList
+  const nextFile = nextList[0]?.originFileObj as File | undefined
+  if (!nextFile) {
+    onRemoveReferenceImage()
+    return
+  }
+  referenceImageFile.value = nextFile
+  setReferencePreview(nextFile)
+}
+
+function onPreviewReferenceImage() {
+  if (!referenceImagePreviewUrl.value) return
+  previewModalOpen.value = true
+}
+
+function onRemoveReferenceImage() {
+  referenceImageFile.value = null
+  uploadFileList.value = []
+  previewModalOpen.value = false
+  clearReferencePreview()
+}
+
+function clearReferencePreview() {
+  if (referenceImagePreviewUrl.value) {
+    URL.revokeObjectURL(referenceImagePreviewUrl.value)
+    referenceImagePreviewUrl.value = ''
+  }
+}
+
+function setReferencePreview(file: File) {
+  clearReferencePreview()
+  referenceImagePreviewUrl.value = URL.createObjectURL(file)
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+async function buildInputImagesForEmit() {
+  if (!referenceImageFile.value) return [] as string[]
+  try {
+    const dataUrl = await readFileAsDataUrl(referenceImageFile.value)
+    return dataUrl ? [dataUrl] : []
+  } catch {
+    return []
+  }
+}
+
+function slugifyName(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-')
+}
+
+function resolveIcon(icon: string | undefined, kind: 'image' | 'video') {
+  if (icon && /^https?:\/\//.test(icon)) return icon
+  if (kind === 'video') return VIDEO_MODEL_ICON
+  return QWEN_ICON
+}
+
+function normalizeOptionPrimitive(raw: unknown) {
+  if (raw === null || raw === undefined) return ''
+  if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
+    return String(raw).trim()
+  }
+  if (typeof raw === 'object') {
+    const entry = raw as Record<string, unknown>
+    const candidate = entry.value ?? entry.label ?? entry.name ?? entry.id
+    return candidate === null || candidate === undefined ? '' : String(candidate).trim()
+  }
+  return ''
+}
+
+function toStringList(value: ModelOptionValue): string[] {
+  if (value === null || value === undefined) return []
+
+  if (Array.isArray(value)) {
+    if (
+      value.length === 2
+      && value.every((item) => typeof item === 'number' && Number.isFinite(item))
+    ) {
+      const [start, end] = value as [number, number]
+      return [String(start), String(end)]
+    }
+    return value
+      .map((item) => normalizeOptionPrimitive(item as ModelOptionPrimitive))
+      .filter((item) => item.length > 0)
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return []
+    if (/[,\|/，]/.test(trimmed)) {
+      return trimmed.split(/[,\|/，]/).map((item) => item.trim()).filter(Boolean)
+    }
+    return [trimmed]
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return [String(value).trim()]
+  }
+
+  const entry = value as Record<string, unknown>
+  const minRaw = entry.min
+  const maxRaw = entry.max
+  const min = Number(minRaw)
+  const max = Number(maxRaw)
+  if (Number.isFinite(min) && Number.isFinite(max)) {
+    return [String(min), String(max)]
+  }
+
+  const candidate = normalizeOptionPrimitive(entry)
+  return candidate ? [candidate] : []
+}
+
+function readOption(config: BackendModelConfig, keys: Array<keyof BackendModelOptions>): string[] {
+  const options = config.options || {}
+  for (const key of keys) {
+    const topLevel = toStringList(config[key] as ModelOptionValue)
+    if (topLevel.length) return topLevel
+    const nested = toStringList(options[key] as ModelOptionValue)
+    if (nested.length) return nested
+  }
+  return []
+}
+
+function dedupeList(items: string[]) {
+  return Array.from(new Set(items.filter((item) => item.length > 0)))
+}
+
+function expandNumImageOptions(items: string[]) {
+  if (!items.length) return []
+  const cleaned = items.map((item) => item.replace(/[\[\]\(\)\s]/g, ''))
+
+  if (cleaned.length === 2) {
+    const min = Number(cleaned[0])
+    const max = Number(cleaned[1])
+    if (Number.isInteger(min) && Number.isInteger(max) && min <= max && max - min <= 20) {
+      return Array.from({ length: max - min + 1 }, (_, index) => String(min + index))
+    }
+  }
+
+  if (cleaned.length === 1) {
+    const rangeMatch = cleaned[0].match(/^(\d+)\s*[-~]\s*(\d+)$/)
+    if (rangeMatch) {
+      const min = Number(rangeMatch[1])
+      const max = Number(rangeMatch[2])
+      if (Number.isInteger(min) && Number.isInteger(max) && min <= max && max - min <= 20) {
+        return Array.from({ length: max - min + 1 }, (_, index) => String(min + index))
+      }
+    }
+  }
+
+  return cleaned.filter((item) => item.length > 0)
+}
+
+function normalizeModelOptions(config: BackendModelConfig) {
+  const numImagesRaw = dedupeList(readOption(config, ['num_images']))
+  return {
+    ratios: dedupeList(readOption(config, ['aspect_ratios', 'aspect_ratio', 'ratios'])),
+    imageSizes: dedupeList(readOption(config, ['image_sizes', 'image_size'])),
+    numImages: dedupeList(expandNumImageOptions(numImagesRaw)),
+    resolutions: dedupeList(readOption(config, ['resolutions'])),
+    durations: dedupeList(readOption(config, ['durations'])),
+  }
+}
+
+function mapPredictTypesToCaps(predictTypes: string[] | undefined, kind: 'image' | 'video'): Array<'text' | 'ref' | 'video'> {
+  const caps = new Set<'text' | 'ref' | 'video'>()
+  const list = Array.isArray(predictTypes) ? predictTypes : []
+
+  for (const raw of list) {
+    const value = String(raw || '')
+    if (!value) continue
+    if (value.includes('视频生视频')) caps.add('video')
+    if (value.includes('文本') || value.includes('文生')) caps.add('text')
+    if (value.includes('首帧') || value.includes('图生') || value.includes('全能参考')) caps.add('ref')
+  }
+
+  if (!caps.size) {
+    caps.add('text')
+    if (kind === 'image') caps.add('ref')
+  }
+  return Array.from(caps)
+}
+
+function normalizeStringArray(input: string[] | string | null | undefined): string[] {
+  if (Array.isArray(input)) return input.map((item) => String(item || '').trim()).filter(Boolean)
+  if (typeof input === 'string') {
+    const trimmed = input.trim()
+    return trimmed ? [trimmed] : []
+  }
+  return []
+}
+
+function normalizeBackendConfig(raw: BackendModelRecord['config']): BackendModelConfig {
+  if (raw && typeof raw === 'object') return raw as BackendModelConfig
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') return parsed as BackendModelConfig
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+function normalizeCostPerGeneration(raw: unknown): number | undefined {
+  if (raw === null || raw === undefined) return undefined
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw < 0) return undefined
+    return raw
+  }
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const parsed = normalizeCostPerGeneration(item)
+      if (parsed !== undefined) return parsed
+    }
+    return undefined
+  }
+  const cleaned = String(raw).trim()
+  if (cleaned && typeof raw !== 'object') {
+    const match = cleaned.match(/-?\d+(?:\.\d+)?/)
+    if (!match) return undefined
+    const parsed = Number(match[0])
+    if (!Number.isFinite(parsed) || parsed < 0) return undefined
+    return parsed
+  }
+  if (typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>
+    const keys = [
+      'cost_per_generation',
+      'costPerGeneration',
+      'cost',
+      'value',
+      'amount',
+      'points',
+      'score',
+    ]
+    for (const key of keys) {
+      const parsed = normalizeCostPerGeneration(obj[key])
+      if (parsed !== undefined) return parsed
+    }
+  }
+  return undefined
+}
+
+function findValueByKeys(source: unknown, keys: string[]): unknown {
+  if (!source || typeof source !== 'object') return undefined
+  const queue: unknown[] = [source]
+  const visited = new Set<object>()
+
+  while (queue.length) {
+    const current = queue.shift()
+    if (!current || typeof current !== 'object') continue
+    if (visited.has(current)) continue
+    visited.add(current)
+
+    if (Array.isArray(current)) {
+      for (const item of current) queue.push(item)
+      continue
+    }
+
+    const obj = current as Record<string, unknown>
+    for (const key of keys) {
+      if (key in obj) {
+        const value = obj[key]
+        if (value !== undefined && value !== null && value !== '') return value
+      }
+    }
+    for (const value of Object.values(obj)) {
+      if (value && typeof value === 'object') queue.push(value)
+    }
+  }
+  return undefined
+}
+
+function resolveModelCost(record: BackendModelRecord, config: BackendModelConfig): number | undefined {
+  const costKeys = ['cost_per_generation', 'costPerGeneration']
+  const topLevel = normalizeCostPerGeneration(record.cost_per_generation ?? record.costPerGeneration)
+  if (topLevel !== undefined) return topLevel
+  const direct = normalizeCostPerGeneration(
+    config.cost_per_generation
+    ?? config.costPerGeneration
+    ?? config.options?.cost_per_generation
+    ?? config.options?.costPerGeneration,
+  )
+  if (direct !== undefined) return direct
+  const deepRaw = findValueByKeys(record, costKeys)
+  return normalizeCostPerGeneration(deepRaw)
+}
+
+function mapBackendModel(record: BackendModelRecord, kind: 'image' | 'video'): ModelItem {
+  const config = normalizeBackendConfig(record.config)
+  const taskType = config.task_type || ''
+  const runwayModel = config.runway_model || ''
+  const modelName = record.name || (record.id ? `Model-${record.id}` : 'Unknown Model')
+  const modelId = Number(record.id || 0)
+  const id = taskType || runwayModel || slugifyName(modelName) || String(modelId)
+  const modelTags = normalizeStringArray(config.predictTypes || config.predict_types)
+  const caps = mapPredictTypesToCaps(modelTags, kind)
+  const options = normalizeModelOptions(config)
+  const vendorTags = normalizeStringArray(config.tags)
+  const vendor = vendorTags[0] || String(record.provider || '').trim()
+  return {
+    id,
+    modelId,
+    taskType: taskType || undefined,
+    runwayModel: runwayModel || undefined,
+    costPerGeneration: resolveModelCost(record, config),
+    isActive: Boolean(record.is_active),
+    name: modelName,
+    vendor,
+    desc: config.description || undefined,
+    icon: resolveIcon(config.icon, kind),
+    caps,
+    tags: modelTags,
+    options,
+  }
+}
+
+function ensureCurrentModelAvailable() {
+  const list = modeModels.value
+  if (!list.length) {
+    currentModel.value = null
+    selectedRatio.value = ''
+    selectedSize.value = ''
+    selectedCount.value = ''
+    return
+  }
+  const matched = list.find((item) => item.id === currentModel.value?.id)
+  if (!matched) {
+    currentModel.value = list[0]
+  }
+  const visibleMatched = visibleModels.value.find((item) => item.id === currentModel.value?.id)
+  if (!visibleMatched && visibleModels.value.length) {
+    currentModel.value = visibleModels.value[0]
+  }
+  applySelectionDefaults()
+}
+
+function choosePreferredValue(options: string[], preferred: string) {
+  if (!options.length) return ''
+  const lowerPreferred = preferred.toLowerCase()
+  const exact = options.find((item) => item.toLowerCase() === lowerPreferred)
+  if (exact) return exact
+  return options[0]
+}
+
+function choosePreferredCount(options: string[], preferred: number) {
+  if (!options.length) return ''
+  const matched = options.find((item) => Number((item || '').replace(/[^\d]/g, '')) === preferred)
+  return matched || options[0]
+}
+
+function applySelectionDefaults() {
+  selectedRatio.value = choosePreferredValue(ratioOptions.value, 'auto')
+  selectedSize.value = sizeOptions.value[0] || ''
+  selectedCount.value = isVideo.value ? (countOptions.value[0] || '') : choosePreferredCount(countOptions.value, 4)
+}
+
+async function loadModelsFromApi() {
+  const ok = props.modelsFetchMode === 'explore'
+    ? await modelsStore.ensureForExplore()
+    : await modelsStore.ensureForOtherPage()
+
+  const db = modelsStore.modelsResponse?.database
+  const mappedImage = (db?.image || [])
+    .filter((item) => Boolean(item?.is_active))
+    .map((item) => mapBackendModel(item, 'image'))
+  const mappedVideo = (db?.video || [])
+    .filter((item) => Boolean(item?.is_active))
+    .map((item) => mapBackendModel(item, 'video'))
+
+  imageModels.value = mappedImage
+  videoModels.value = mappedVideo
+  if (!mappedImage.length && !mappedVideo.length) {
+    currentModel.value = null
+  }
+  ensureCurrentModelAvailable()
+
+  if (!ok && modelsStore.error) {
+    closeAll()
+    message.warning(modelsStore.error)
+  }
+}
+
+function normalizeAspectRatio(raw: string) {
+  const trimmed = (raw || '').trim()
+  if (!trimmed) return 'auto'
+  return trimmed.toLowerCase() === 'auto' ? 'auto' : trimmed
+}
+
+function normalizeNumImages(raw: string) {
+  const parsed = Number((raw || '').replace(/[^\d]/g, ''))
+  if (!Number.isFinite(parsed) || parsed <= 0) return 4
+  return parsed
+}
+
+function normalizeImageSize(raw: string) {
+  const trimmed = (raw || '').trim()
+  return trimmed || '2K'
+}
+
+function getErrorMessage(err: unknown, fallback: string) {
+  const maybe = err as {
+    response?: { data?: { detail?: string; error?: string; message?: string } }
+    detail?: string
+    error?: string
+    message?: string
+  }
+  return (
+    maybe?.response?.data?.detail
+    || maybe?.response?.data?.error
+    || maybe?.response?.data?.message
+    || maybe?.detail
+    || maybe?.error
+    || maybe?.message
+    || fallback
+  )
+}
+
+function isTaskStatusNotFoundError(err: unknown) {
+  const msg = getErrorMessage(err, '')
+  return msg.includes('404 Not Found') || msg.includes('HTTP 404')
+}
+
+function clearPollingTask() {
+  pollAbortFlag.value = true
+  if (pollTimer.value) {
+    clearTimeout(pollTimer.value)
+    pollTimer.value = null
+  }
+  isPolling.value = false
+  currentTaskId.value = null
+}
+
+async function pollTaskStatus(taskId: string) {
+  clearPollingTask()
+  pollAbortFlag.value = false
+  isPolling.value = true
+  currentTaskId.value = taskId
+
+  const pollOnce = async () => {
+    if (pollAbortFlag.value) return
+    try {
+      const res = await request.get<unknown, TaskStatusResponse>(`/api/tasks/${taskId}`)
+      const status = String(res?.status || '').toUpperCase()
+      const progress = typeof res?.progress === 'number' ? res.progress : undefined
+      emit('task-progress', {
+        taskId,
+        status,
+        progress,
+        progressText: res?.progress_text,
+      })
+
+      if (status === 'SUCCEEDED') {
+        const artifacts = Array.isArray(res?.artifacts) ? res.artifacts : []
+        clearPollingTask()
+        message.success('图片生成完成')
+        emit('task-succeeded', { taskId, artifacts })
+        return
+      }
+
+      if (status === 'FAILED' || status === 'CANCELLED') {
+        const errMsg = getErrorMessage(res?.error || res, '生成失败，请稍后重试')
+        clearPollingTask()
+        message.error(errMsg)
+        emit('task-failed', { taskId, status, error: errMsg })
+        return
+      }
+    } catch (error) {
+      if (isTaskStatusNotFoundError(error)) {
+        clearPollingTask()
+        message.info('任务已创建，状态查询接口暂不可用，请稍后在生成页查看结果')
+        emit('task-progress', {
+          taskId,
+          status: 'PENDING',
+          progressText: 'status endpoint not available',
+        })
+        return
+      }
+
+      const errMsg = getErrorMessage(error, '轮询任务状态失败')
+      clearPollingTask()
+      message.error(errMsg)
+      emit('task-failed', { taskId, status: 'ERROR', error: errMsg })
+      return
+    }
+
+    if (!pollAbortFlag.value) {
+      pollTimer.value = setTimeout(() => {
+        void pollOnce()
+      }, 5000)
+    }
+  }
+
+  await pollOnce()
+}
+
+function buildImageTaskPayload(): ImageTaskPayload | null {
+  if (!currentModel.value) return null
+  const taskType = currentModel.value.taskType || currentModel.value.runwayModel || ''
+  if (!taskType || !currentModel.value.modelId) return null
+  return {
+    prompt: prompt.value.trim(),
+    model_id: currentModel.value.modelId,
+    task_type: taskType,
+    model_name: taskType,
+    aspect_ratio: normalizeAspectRatio(selectedRatio.value),
+    num_images: normalizeNumImages(selectedCount.value),
+    image_size: normalizeImageSize(selectedSize.value),
+  }
+}
+
 function ratioIconType(ratio: string) {
   const imageMap: Record<string, string> = {
+    auto: 'icon-zhinengbili',
     智能: 'icon-zhinengbili',
     '9:21': 'icon-a-921',
     '9:16': 'icon-a-916',
@@ -402,6 +1022,7 @@ function ratioIconType(ratio: string) {
     '21:9': 'icon-a-219',
   }
   const videoMap: Record<string, string> = {
+    auto: 'icon-zhinengbili',
     智能: 'icon-zhinengbili',
     '9:16': 'icon-a-916',
     '3:4': 'icon-a-34',
@@ -410,6 +1031,10 @@ function ratioIconType(ratio: string) {
     '16:9': 'icon-a-169',
   }
   return (isVideo.value ? videoMap : imageMap)[ratio] || 'icon-zhinengbili'
+}
+
+function ratioDisplayText(ratio: string) {
+  return ratio.toLowerCase() === 'auto' ? '智能' : ratio
 }
 
 function capTagIcon(tag: string) {
@@ -421,11 +1046,21 @@ function capTagIcon(tag: string) {
 
 function isCapTagSelected(tag: string) {
   if (mode.value === 'IMAGE') {
-    return imageModelTab.value === 'txt2img' ? tag.includes('文生图') : tag.includes('参考生图')
+    return imageModelTab.value === 'txt2img'
+      ? tag.includes('文生图') || tag.includes('文本') || tag.includes('文生')
+      : tag.includes('参考生图') || tag.includes('图生') || tag.includes('首帧') || tag.includes('全能参考')
   }
-  if (videoModelTab.value === 'txt2video') return tag.includes('文生视频')
-  if (videoModelTab.value === 'img2video') return tag.includes('图生视频')
+  if (videoModelTab.value === 'txt2video') return tag.includes('文生视频') || tag.includes('文本') || tag.includes('文生')
+  if (videoModelTab.value === 'img2video') return tag.includes('图生视频') || tag.includes('图生') || tag.includes('首帧') || tag.includes('全能参考')
   return tag.includes('视频生视频')
+}
+
+function countDisplayText(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const digits = raw.replace(/[^\d]/g, '')
+  if (!digits) return raw
+  return isVideo.value ? `${digits}秒` : `${digits}张`
 }
 
 function closeAll(except?: PopoverName) {
@@ -435,35 +1070,32 @@ function closeAll(except?: PopoverName) {
 }
 
 function onPopoverChange(name: PopoverName, open: boolean) {
+  if (name === 'model' && open && (!hasModeModels.value || isModelsLoading.value)) {
+    modelOpen.value = false
+    return
+  }
+  if (name === 'smart' && open && !hasSmartOptions.value) {
+    smartOpen.value = false
+    return
+  }
   if (open) closeAll(name)
   if (name === 'model') modelOpen.value = open
   if (name === 'smart') smartOpen.value = open
   if (name === 'at') atOpen.value = open
 }
 
-function onFrameDropdownVisibleChange(open: boolean) {
-  if (open) closeAll()
-}
-
 function onModeChange(next: string | number) {
   console.log('切换模式', next)
+  clearPollingTask()
   const resolved = next === 'VIDEO' ? 'VIDEO' : 'IMAGE'
   if (mode.value === resolved) return
   mode.value = resolved
   closeAll()
+  ensureCurrentModelAvailable()
+}
 
-  if (resolved === 'VIDEO') {
-    currentModel.value = videoModels[0]
-    selectedRatio.value = '智能'
-    selectedSize.value = '720P'
-    selectedCount.value = '5s'
-    frameMode.value = 'FF_2_VIDEO'
-  } else {
-    currentModel.value = imageModels[0]
-    selectedRatio.value = '智能'
-    selectedSize.value = '高清2K'
-    selectedCount.value = '4张'
-  }
+function onRetryLoadModels() {
+  void loadModelsFromApi()
 }
 
 function setModelTab(key: ModelTabKey) {
@@ -472,29 +1104,107 @@ function setModelTab(key: ModelTabKey) {
   } else {
     videoModelTab.value = key as VidModelTab
   }
+  const firstVisible = visibleModels.value[0]
+  if (firstVisible && currentModel.value?.id !== firstVisible.id && !visibleModels.value.some((item) => item.id === currentModel.value?.id)) {
+    currentModel.value = firstVisible
+  }
+  applySelectionDefaults()
 }
 
 function selectModel(modelItem: ModelItem) {
   currentModel.value = modelItem
+  applySelectionDefaults()
   modelOpen.value = false
 }
 
-function onTranslate() {
-  if (!prompt.value.trim()) {
-    message.warning('请输入内容后再翻译')
+async function onGenerate() {
+  if (!canGenerate.value || isSubmitting.value) return
+
+  if (isVideo.value) {
+    message.info('视频生成接口暂未接入')
     return
   }
-  message.success('翻译完成')
-}
 
-function onGenerate() {
-  if (!canGenerate.value) return
-  message.success(isVideo.value ? '已提交视频生成任务' : '已提交图片生成任务')
+  const payload = buildImageTaskPayload()
+  if (!payload) {
+    message.error(currentModel.value ? '该模型缺少任务类型配置，无法创建任务' : '暂无可用模型，请稍后重试')
+    return
+  }
+  if (!payload.prompt) {
+    message.warning('请输入提示词')
+    return
+  }
+
+  isSubmitting.value = true
+  let createdTaskId = ''
+
+  try {
+    clearPollingTask()
+    let createRes: TaskCreateResponse
+    if (referenceImageFile.value) {
+      const formData = new FormData()
+      formData.append('prompt', payload.prompt)
+      formData.append('model_id', String(payload.model_id))
+      formData.append('task_type', payload.task_type)
+      formData.append('model_name', payload.model_name)
+      formData.append('aspect_ratio', payload.aspect_ratio)
+      formData.append('num_images', String(payload.num_images))
+      formData.append('image_size', payload.image_size)
+      formData.append('image', referenceImageFile.value)
+      createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks/with-image', formData)
+    } else {
+      createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload)
+    }
+
+    if (!createRes?.success || !createRes?.task_id) {
+      throw new Error(getErrorMessage(createRes, '创建任务失败'))
+    }
+
+    const taskId = createRes.task_id
+    createdTaskId = taskId
+    const taskCreatedPayload: TaskCreatedEventPayload = {
+      taskId,
+      payload,
+      displayMeta: {
+        prompt: payload.prompt,
+        modelLabel: currentModel.value?.name || '未知模型',
+        ratioLabel: payload.aspect_ratio,
+        sizeLabel: selectedSize.value,
+        countLabel: countDisplayText(selectedCount.value),
+      },
+      inputImages: await buildInputImagesForEmit(),
+      expectedCount: payload.num_images,
+    }
+    emit('task-created', taskCreatedPayload)
+    message.success(`任务创建成功：${taskId}`)
+    if (props.pollMode === 'internal') {
+      await pollTaskStatus(taskId)
+    }
+  } catch (error) {
+    const errMsg = getErrorMessage(error, '提交生成任务失败')
+    message.error(errMsg)
+    emit('task-failed', {
+      taskId: currentTaskId.value || createdTaskId || '',
+      status: 'CREATE_FAILED',
+      error: errMsg,
+    })
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 function onTextareaFocus() {
   if (props.showMini) emit('update:showMini', false)
 }
+
+onMounted(() => {
+  void loadModelsFromApi()
+})
+
+onBeforeUnmount(() => {
+  clearPollingTask()
+  clearReferencePreview()
+})
 </script>
 
 <style scoped lang="scss">
@@ -625,6 +1335,7 @@ function onTextareaFocus() {
         width: 50px;
         height: 50px;
         border:none;
+
       }
       .editor-wrap{
         flex:1;
@@ -653,6 +1364,14 @@ function onTextareaFocus() {
   align-items: flex-start;
   gap: 12px;
 
+  .upload-wrapper {
+    display: block;
+
+    :deep(.ant-upload) {
+      display: block;
+    }
+  }
+
   .upload-btn {
     width: 60px;
     height: 80px;
@@ -665,7 +1384,22 @@ function onTextareaFocus() {
     position: relative;
     cursor: pointer;
     transition: background 0.2s ease;
-
+    .upload-tag{
+      color: rgb(105, 40, 254);
+      font-family: "PingFang SC";
+      font-size: 9px;
+      font-weight: 400;
+      height: 13px;
+      left: 4px;
+      line-height: 13px;
+      position: absolute;
+      text-align: center;
+      top: 4px;
+      z-index: 2;
+      background: #e2ccff;
+      border-radius: 8px;
+      padding: 0px 3px;
+    }
     &:hover {
       background: #f3f3f5;
     }
@@ -676,11 +1410,45 @@ function onTextareaFocus() {
       color: rgba(0, 0, 0, 0.65);
     }
 
-    input {
+    .upload-preview {
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      object-fit: cover;
+      display: block;
+      cursor: zoom-in;
+    }
+
+    .upload-remove-btn {
       position: absolute;
-      inset: 0;
-      opacity: 0;
+      right: 4px;
+      top: 4px;
+      width: 16px;
+      height: 16px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.66);
+      color: #fff;
+      font-size: 14px;
+      line-height: 16px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, background 0.2s ease;
+      z-index: 3;
+
+      &:hover {
+        background: rgba(0, 0, 0, 0.82);
+      }
+    }
+
+    &.has-image:hover .upload-remove-btn {
+      opacity: 1;
+      pointer-events: auto;
     }
   }
 
@@ -721,6 +1489,16 @@ function onTextareaFocus() {
   }
 }
 
+:deep(.reference-preview-modal .ant-modal-body) {
+  padding: 12px;
+}
+
+.reference-preview-modal-image {
+  width: 100%;
+  display: block;
+  border-radius: 8px;
+}
+
 .control-row {
   display: flex;
   align-items: center;
@@ -749,6 +1527,11 @@ function onTextareaFocus() {
   padding: 8px 8px 8px 11px;
   gap: 4px;
   transition: all 0.16s ease;
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    pointer-events: none;
+  }
 
   &:hover,
   &.open {
@@ -758,7 +1541,7 @@ function onTextareaFocus() {
 
   .arrow {
     color: rgba(0, 0, 0, 0.45);
-    font-size: 14px;
+    font-size: 12px;
     transition: transform 0.16s ease;
   }
 
@@ -779,7 +1562,7 @@ function onTextareaFocus() {
     }
 
     .name {
-      font-size: 14px;
+      font-size: 12px;
       line-height: 20px;
       font-weight: 500;
       max-width: 128px;
@@ -795,7 +1578,7 @@ function onTextareaFocus() {
       align-items: center;
       gap: 5px;
       white-space: nowrap;
-      font-size: 14px;
+      font-size: 12px;
       line-height: 20px;
       font-weight: 500;
     }
@@ -832,57 +1615,6 @@ function onTextareaFocus() {
   }
 }
 
-.frame-select-wrap {
-  position: relative;
-
-  .frame-select-leading-icon {
-    color: rgba(0, 0, 0, 0.65);
-    font-size: 16px;
-    left: 9px;
-    pointer-events: none;
-    position: absolute;
-    top: 10px;
-    z-index: 2;
-  }
-
-  :deep(.frame-select) {
-    min-width: 84px;
-  }
-
-  :deep(.frame-select .ant-select-selector) {
-    align-items: center;
-    background: #fff !important;
-    border: 1px solid #e8e7ea !important;
-    border-radius: 18px !important;
-    box-shadow: none !important;
-    display: flex;
-    height: 36px !important;
-    padding: 0 24px 0 29px !important;
-  }
-
-  :deep(.frame-select.ant-select:hover .ant-select-selector),
-  :deep(.frame-select.ant-select.ant-select-open .ant-select-selector) {
-    background: #f3f3f5 !important;
-    border-color: #e3e4e8 !important;
-  }
-
-  :deep(.frame-select .ant-select-selection-item) {
-    color: rgba(0, 0, 0, 0.88);
-    font-size: 14px;
-    line-height: 20px;
-  }
-
-  :deep(.frame-select .ant-select-arrow) {
-    color: rgba(0, 0, 0, 0.45);
-    font-size: 14px;
-    right: 8px;
-  }
-
-  :deep(.frame-select.ant-select-open .ant-select-arrow) {
-    transform: rotate(180deg);
-  }
-}
-
 .right-controls {
   display: flex;
   align-items: center;
@@ -909,18 +1641,24 @@ function onTextareaFocus() {
   }
 
   .generate {
-    width: 60px;
+    width: auto;
     min-width: 60px;
     height: 36px;
     border-radius: 20px;
     padding: 0 12px;
     font-size: 14px;
     font-weight: 500;
-    background: #6928fe;
+    background: #000;
     border: none;
+    transition: min-width 0.26s ease, padding 0.26s ease, background-color 0.2s ease;
+
+    &.has-cost {
+      min-width: 84px;
+      padding: 0 14px;
+    }
 
     &:hover:not(:disabled) {
-      background: #7a43ff;
+      background: #000;
     }
 
     &:disabled {
@@ -928,6 +1666,37 @@ function onTextareaFocus() {
       color: rgba(255, 255, 255, 0.9);
     }
   }
+}
+
+.generate-label-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+}
+
+.generate-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.credits-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.generate-label-enter-active,
+.generate-label-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.generate-label-enter-from,
+.generate-label-leave-to {
+  opacity: 0;
+  transform: translateY(2px);
 }
 
 :global(.wuli-ant-popover) {
@@ -946,48 +1715,6 @@ function onTextareaFocus() {
     padding: 0;
   }
 }
-:deep(.frame-item-icon) {
-    color: rgba(0, 0, 0, 0.65);
-    font-size: 16px;
-  }
-:global(.wuli-frame-select-dropdown .ant-select-item-option-state) {
-  display: none;
-}
-
-:global(.wuli-frame-select-dropdown .ant-select-item) {
-  border-radius: 8px;
-  min-height: 28px;
-  padding: 4px 8px;
-}
-
-:global(.wuli-frame-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled)) {
-  background: #f5f5f6;
-}
-
-:global(.wuli-frame-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled)) {
-  background: #f3f3f5;
-  color: rgba(0, 0, 0, 0.88);
-  font-weight: 400;
-}
-
-:global(.wuli-frame-select-dropdown .ant-select-item-option-content) {
-  align-items: center;
-  display: flex;
-}
-
-:global(.wuli-frame-select-dropdown .ant-select-item-option-content .frame-option-label) {
-  align-items: center;
-  display: inline-flex;
-  gap: 4px;
-  font-size: 14px;
-  line-height: 20px;
-}
-
-:global(.wuli-frame-select-dropdown .ant-select-item-option-content .frame-item-icon) {
-  color: rgba(0, 0, 0, 0.65);
-  font-size: 16px;
-}
-
 .model-popover-inner {
   background: #fff;
   width: 616px;
@@ -1055,6 +1782,36 @@ function onTextareaFocus() {
     }
   }
 
+  .model-empty {
+    min-height: 94px;
+    border: 1px dashed #e4e4ea;
+    border-radius: 12px;
+    color: rgba(0, 0, 0, 0.45);
+    font-size: 14px;
+    line-height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .retry-btn {
+    border: 1px solid #d7d7df;
+    border-radius: 14px;
+    background: #fff;
+    color: rgba(0, 0, 0, 0.88);
+    font-size: 12px;
+    line-height: 18px;
+    padding: 2px 10px;
+    cursor: pointer;
+
+    &:hover {
+      background: #f7f7fa;
+    }
+  }
+
   .model-card {
     width: 100%;
     border: 1px solid #ececef;
@@ -1093,7 +1850,7 @@ function onTextareaFocus() {
     .title-row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 4px;
     }
 
     .title {
@@ -1102,18 +1859,17 @@ function onTextareaFocus() {
       font-weight: 500;
       color: rgba(0, 0, 0, 0.88);
     }
-
     .tag {
-      height: 20px;
-      line-height: 20px;
-      border-radius: 999px;
-      padding: 0 8px;
-      font-size: 14px;
-      color: #7a59ff;
-      background: #ede7ff;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
+      background: #f5efff;
+      border-radius: 8px;
+      box-sizing: border-box;
+      color: #8b52ff;
+      display: flex;
+      font-size: 11px;
+      justify-content: center;
+      line-height: 18px;
+      padding: 2px 6px;
+      font-weight: 500;
     }
 
     .desc {
@@ -1136,7 +1892,7 @@ function onTextareaFocus() {
       border-radius: 6px;
       border: 1px solid #d4d3ec;
       padding: 0 7px 0 5px;
-      font-size: 14px;
+      font-size: 12px;
       color: #6b65a3;
       background: #f7f7ff;
       display: inline-flex;
@@ -1163,11 +1919,11 @@ function onTextareaFocus() {
 
 .smart-popover-inner {
   background: #fff;
-  width: 262px;
+  width: 320px;
 
   &.is-image {
-    width: 438px;
-    padding: 16px;
+    // width: 438px;
+    // padding: 16px;
   }
 
   .block + .block {
@@ -1185,7 +1941,8 @@ function onTextareaFocus() {
     background: #f3f3f5;
     border-radius: 8px;
     padding: 2px;
-    display: grid;
+    display: flex;
+    flex-wrap: wrap;
     gap: 2px;
 
     &.ratio {
@@ -1196,16 +1953,12 @@ function onTextareaFocus() {
         max-width: 100%;
       }
     }
-
-    &.split2 {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    &.split3 {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-
-      &.image {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+    .opt{
+      flex: 1;
+      height: 42px;
+      font-size: 12px;
+      &.size-opt{
+        height: 24px;
       }
     }
   }

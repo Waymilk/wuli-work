@@ -206,10 +206,13 @@ const timeOptions = [
   { key: 'quarter', label: '最近三个月' },
 ]
 
+const allModelOptions = computed(() => ['全部', ...props.modelOptions])
+
 const visibleModelOptions = computed(() => {
   const keyword = modelKeyword.value.trim().toLowerCase()
-  if (!keyword) return props.modelOptions
-  return props.modelOptions.filter((model) => model.toLowerCase().includes(keyword))
+  console.log(allModelOptions.value, 'allModelOptions')
+  if (!keyword) return allModelOptions.value
+  return allModelOptions.value.filter((model) => model.toLowerCase().includes(keyword))
 })
 
 const emitSearch = () => {
@@ -233,17 +236,27 @@ const expandSearch = async () => {
   searchExpanded.value = false
 }
 
-const isModelChecked = (model: string) => props.selectedModels.includes(model)
+const isModelChecked = (model: string) => {
+  if (model === '全部') {
+    if (!props.modelOptions.length) return false
+    return (
+      props.selectedModels.length === props.modelOptions.length &&
+      props.modelOptions.every((item) => props.selectedModels.includes(item))
+    )
+  }
+  return props.selectedModels.includes(model)
+}
 
 const onModelCheckboxChange = (model: string, checked: boolean) => {
   if (model === '全部') {
-    emit('update:selectedModels', ['全部'])
+    emit('update:selectedModels', checked ? [...props.modelOptions] : [])
     return
   }
 
-  const next = props.selectedModels.filter((item) => item !== '全部')
-  const changed = checked ? [...next, model] : next.filter((item) => item !== model)
-  emit('update:selectedModels', changed.length ? changed : ['全部'])
+  const next = new Set(props.selectedModels)
+  if (checked) next.add(model)
+  else next.delete(model)
+  emit('update:selectedModels', [...next])
 }
 
 const onModelOpenChange = (open: boolean) => {
@@ -483,7 +496,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   border: 1px solid rgba(5, 5, 5, 0.05);
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.11);
-  padding: 16px;
+  padding: 16px 0;
 }
 
 .model-popover-inner {

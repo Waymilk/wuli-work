@@ -162,6 +162,10 @@ function prevSlide() {
   height: 100%;
 }
 
+:deep(.slick-dots) {
+ z-index: 1;
+}
+
 .carousel-slide {
   height: 100%;
 }
