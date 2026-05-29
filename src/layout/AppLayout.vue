@@ -4,13 +4,20 @@
       <AppSider />
     </a-layout-sider>
     <a-layout-content class="content">
-      <router-view />
+      <router-view :key="contentViewKey" />
     </a-layout-content>
   </a-layout>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppSider from './AppSider.vue'
+import { useAuthStore } from '@/stores/auth'
+
+const route = useRoute()
+const authStore = useAuthStore()
+const contentViewKey = computed(() => `${route.fullPath}::${authStore.pageRefreshKey}`)
 </script>
 
 <style scoped lang="scss">

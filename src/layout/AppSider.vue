@@ -92,7 +92,7 @@
               <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('watermark')">AI生成水印设置</button> -->
               <button type="button" class="more-popover-item" @click="onMoreMenuAction('account')">账号设置</button>
               <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('about')">关于我们</button> -->
-              <button type="button" class="more-popover-item" @click="onMoreMenuAction('logout')">退出</button>
+              <button v-if="isLoggedIn" type="button" class="more-popover-item" @click="onMoreMenuAction('logout')">退出</button>
             </div>
           </template>
           <button class="icon-btn extra" type="button" :class="{ 'is-active': morePopoverOpen }">
@@ -357,8 +357,8 @@
           <div class="account-info-row">
             <span>注册手机号</span>
             <span class="account-value">
-              15768653529
-              <button type="button" class="account-copy" @click="copyText('15768653529')">⧉</button>
+              13554884321
+              <button type="button" class="account-copy" @click="copyText('13554884321')">⧉</button>
             </span>
           </div>
           <div class="account-info-row">
@@ -376,15 +376,18 @@
 <script setup lang="ts">
 import { createFromIconfontCN } from '@ant-design/icons-vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { message } from 'ant-design-vue'
+import { useRoute, useRouter } from 'vue-router'
 import AuthLoginModal from '@/components/AuthLoginModal.vue'
 import { useAuthStore } from '@/stores/auth'
+import request from '@/utils/request'
 
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
 })
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 
 const menuItems = [
@@ -428,6 +431,7 @@ const morePopoverOpen = ref(false)
 const themeSubmenuOpen = ref(false)
 const feedbackText = ref('')
 const feedbackPhone = ref('')
+const isLoggingOut = ref(false)
 let themeSubmenuTimer: ReturnType<typeof setTimeout> | null = null
 
 const messagePanelRef = ref<HTMLElement | null>(null)
@@ -461,7 +465,7 @@ const toggleMessagePanel = () => {
   messagePanelOpen.value = !messagePanelOpen.value
 }
 
-const onMoreMenuAction = (key: string) => {
+const onMoreMenuAction = async (key: string) => {
   morePopoverOpen.value = false
   themeSubmenuOpen.value = false
   if (key === 'feedback') {
@@ -471,8 +475,19 @@ const onMoreMenuAction = (key: string) => {
     accountModalOpen.value = true
   }
   if (key === 'logout') {
-    authStore.clearAuth()
-    authStore.closeAuthModal()
+    if (isLoggingOut.value) return
+    isLoggingOut.value = true
+    try {
+      await request.post('/api/auth/logout')
+    } catch (_error) {
+      message.warning('服务端退出失败，已本地退出')
+    } finally {
+      authStore.clearAuth()
+      authStore.closeAuthModal()
+      await router.push('/explore')
+      isLoggingOut.value = false
+    }
+    return
   }
 }
 

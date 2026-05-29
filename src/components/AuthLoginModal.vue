@@ -160,7 +160,7 @@ interface AuthResponse {
   user: AuthUser
 }
 
-const isRegister = ref(true)
+const isRegister = ref(false)
 const username = ref('')
 const email = ref('')
 const password = ref('')
@@ -231,6 +231,7 @@ async function handleSubmit() {
     }
 
     authStore.setAuth(response.token, response.user)
+    authStore.refreshCurrentPage()
     authStore.closeAuthModal()
     emit('update:open', false)
     message.success(isRegister.value ? '注册成功' : '登录成功')
@@ -254,7 +255,7 @@ watch(
       return
     }
     resetForm()
-    isRegister.value = true
+    isRegister.value = false
   },
 )
 </script>

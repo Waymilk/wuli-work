@@ -160,10 +160,10 @@
                 </button>
               </div>
             </article>
-            <div v-if="!historyItems.length && !historyLoading && !historyError" class="history-empty">暂无历史任务，先去生成一条吧</div>
+            <div v-if="!historyItems.length && !historyLoading" class="history-empty">暂无历史任务，先去生成一条吧</div>
             <div v-if="historyLoadingMore" class="history-loading-more">加载更多中...</div>
             <div v-if="historyLoading && !historyItems.length" class="history-loading-more">历史记录加载中...</div>
-            <div v-if="historyError && !historyItems.length" class="history-empty">{{ historyError }}</div>
+            <!-- <div v-if="historyError && !historyItems.length" class="history-empty">{{ historyError }}</div> -->
           </div>
         </section>
 

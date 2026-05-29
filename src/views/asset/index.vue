@@ -40,7 +40,7 @@
 
       <main class="asset-list-wrapper">
         <div v-if="loading" class="empty-box">加载中...</div>
-        <div v-else-if="loadError" class="empty-box">{{ loadError }}</div>
+        <!-- <div v-else-if="loadError" class="empty-box">{{ loadError }}</div> -->
         <template v-for="group in groupedAssets" :key="group.date">
           <section class="asset-date-group">
             <div class="date-header">
@@ -113,7 +113,7 @@
           </section>
         </template>
 
-        <div v-if="!loading && !loadError && groupedAssets.length === 0" class="empty-box">暂无符合条件的资产</div>
+        <div v-if="!loading && groupedAssets.length === 0" class="empty-box">暂无符合条件的资产</div>
         <div v-if="loadingMore" class="empty-box">加载更多中...</div>
       </main>
 

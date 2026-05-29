@@ -27,6 +27,7 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref('')
   const user = ref<AuthUser | null>(null)
   const authModalOpen = ref(false)
+  const pageRefreshKey = ref(0)
 
   const isLoggedIn = computed(() => token.value.length > 0)
 
@@ -71,16 +72,22 @@ export const useAuthStore = defineStore('auth', () => {
     authModalOpen.value = false
   }
 
+  function refreshCurrentPage() {
+    pageRefreshKey.value += 1
+  }
+
   return {
     token,
     user,
     isLoggedIn,
     authModalOpen,
+    pageRefreshKey,
     setAuth,
     clearAuth,
     restoreFromStorage,
     openAuthModal,
     closeAuthModal,
+    refreshCurrentPage,
   }
 })
 

@@ -274,6 +274,7 @@ import { Upload as AUpload, message } from 'ant-design-vue'
 import type { UploadProps } from 'ant-design-vue'
 import { DownOutlined, createFromIconfontCN } from '@ant-design/icons-vue'
 import request from '@/utils/request'
+import { useAuthStore } from '@/stores/auth'
 import creditsIcon from '@/assets/credits.svg'
 import { useModelsStore } from '@/stores/models'
 import type {
@@ -308,6 +309,8 @@ const emit = defineEmits<{
   (e: 'task-succeeded', payload: { taskId: string; artifacts: TaskArtifact[] }): void
   (e: 'task-failed', payload: { taskId: string; status: string; error: string }): void
 }>()
+
+const authStore = useAuthStore()
 
 interface ModelItem {
   id: string
@@ -1185,6 +1188,10 @@ function selectModel(modelItem: ModelItem) {
 }
 
 async function onGenerate() {
+  if (!authStore.isLoggedIn) {
+    authStore.openAuthModal()
+    return
+  }
   if (!canGenerate.value || isSubmitting.value) return
 
   const isVideoTask = isVideo.value
