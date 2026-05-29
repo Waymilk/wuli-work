@@ -491,33 +491,33 @@ const onMoreMenuAction = async (key: string) => {
   }
 }
 
-const openThemeSubmenu = () => {
-  if (themeSubmenuTimer) {
-    clearTimeout(themeSubmenuTimer)
-    themeSubmenuTimer = null
-  }
-  themeSubmenuOpen.value = true
-}
+// const openThemeSubmenu = () => {
+//   if (themeSubmenuTimer) {
+//     clearTimeout(themeSubmenuTimer)
+//     themeSubmenuTimer = null
+//   }
+//   themeSubmenuOpen.value = true
+// }
 
-const closeThemeSubmenuWithDelay = () => {
-  if (themeSubmenuTimer) clearTimeout(themeSubmenuTimer)
-  themeSubmenuTimer = setTimeout(() => {
-    themeSubmenuOpen.value = false
-    themeSubmenuTimer = null
-  }, 90)
-}
+// const closeThemeSubmenuWithDelay = () => {
+//   if (themeSubmenuTimer) clearTimeout(themeSubmenuTimer)
+//   themeSubmenuTimer = setTimeout(() => {
+//     themeSubmenuOpen.value = false
+//     themeSubmenuTimer = null
+//   }, 90)
+// }
 
-const closeThemeSubmenu = () => {
-  if (themeSubmenuTimer) {
-    clearTimeout(themeSubmenuTimer)
-    themeSubmenuTimer = null
-  }
-  themeSubmenuOpen.value = false
-}
+// const closeThemeSubmenu = () => {
+//   if (themeSubmenuTimer) {
+//     clearTimeout(themeSubmenuTimer)
+//     themeSubmenuTimer = null
+//   }
+//   themeSubmenuOpen.value = false
+// }
 
-const toggleThemeSubmenu = () => {
-  themeSubmenuOpen.value = !themeSubmenuOpen.value
-}
+// const toggleThemeSubmenu = () => {
+//   themeSubmenuOpen.value = !themeSubmenuOpen.value
+// }
 
 const copyText = async (text: string) => {
   try {

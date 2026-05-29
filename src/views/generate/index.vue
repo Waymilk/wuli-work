@@ -221,7 +221,7 @@ const generateTasksStore = useGenerateTasksStore()
 const historyItems = computed(() => generateTasksStore.items)
 const historyLoading = computed(() => generateTasksStore.historyLoading)
 const historyLoadingMore = computed(() => generateTasksStore.historyLoadingMore)
-const historyError = computed(() => generateTasksStore.historyError)
+// const historyError = computed(() => generateTasksStore.historyError)
 
 const handleScroll = () => {
   if (scrollContainerRef.value) {
