@@ -15,13 +15,16 @@
         <div class="detail-media-panel">
           <video
             v-if="currentMedia.type === 'VIDEO'"
+            ref="detailVideoRef"
             class="detail-media"
             :src="currentMedia.src"
+            :controls="showVideoControls"
             autoplay
             muted
-            loop
             playsinline
             preload="metadata"
+            @mouseenter="onVideoMouseEnter"
+            @mouseleave="onVideoMouseLeave"
           />
           <img v-else class="detail-media" :src="currentMedia.src" alt="detail" />
         </div>
@@ -49,7 +52,7 @@
             </button>
           </div>
 
-          <div v-if="thumbnailList.length" class="thumbnailList">
+          <div v-if="item.type !== 'VIDEO' && thumbnailList.length" class="thumbnailList">
             <button
               v-for="(thumb, index) in thumbnailList"
               :key="thumb.id || `${thumb.src}-${index}`"
@@ -117,7 +120,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { createFromIconfontCN } from '@ant-design/icons-vue'
 import { CloseOutlined, DownOutlined, UpOutlined } from '@ant-design/icons-vue'
 
@@ -185,6 +188,8 @@ const emit = defineEmits<{
 }>()
 
 const activeThumbIndex = ref(0)
+const detailVideoRef = ref<HTMLVideoElement | null>(null)
+const showVideoControls = ref(false)
 
 const thumbnailList = computed<InspirationDetailThumbnail[]>(() => {
   if (!props.item) return []
@@ -223,22 +228,42 @@ const selectThumbnail = (index: number) => {
 }
 
 const handlePrevClick = () => {
-  if (thumbnailList.value.length > 1) {
-    activeThumbIndex.value = activeThumbIndex.value > 0 ? activeThumbIndex.value - 1 : thumbnailList.value.length - 1
-    return
-  }
-
   props.item?.onPrev?.()
 }
 
 const handleNextClick = () => {
-  if (thumbnailList.value.length > 1) {
-    activeThumbIndex.value = activeThumbIndex.value < thumbnailList.value.length - 1 ? activeThumbIndex.value + 1 : 0
-    return
-  }
-
   props.item?.onNext?.()
 }
+
+const onVideoMouseEnter = () => {
+  showVideoControls.value = true
+}
+
+const onVideoMouseLeave = () => {
+  showVideoControls.value = false
+}
+
+watch(
+  [() => props.open, () => currentMedia.value.src, () => currentMedia.value.type],
+  async ([open, src, type]) => {
+    void src
+    if (!open || type !== 'VIDEO') {
+      showVideoControls.value = false
+      return
+    }
+    showVideoControls.value = false
+    await nextTick()
+    const video = detailVideoRef.value
+    if (!video) return
+    try {
+      video.currentTime = 0
+      await video.play()
+    } catch {
+      // autoplay may be blocked
+    }
+  },
+  { immediate: true },
+)
 
 const primaryTag = computed(() => {
   if (!props.item) return ''
@@ -351,7 +376,7 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
 .detail-media {
   border-radius: 12px;
   display: block;
-  height: calc(100vh - 180px);
+  // height: calc(100vh - 180px);
   max-height: 860px;
   max-width: 100%;
   object-fit: contain;
@@ -496,10 +521,10 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
 
 .detail-prompt {
   color: rgba(0, 0, 0, 0.88);
-  display: grid;
+  display: flex;
   font-size: 16px;
   gap: 6px;
-  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
   line-height: 28px;
   margin: 0 0 16px;
   word-break: break-word;
@@ -508,7 +533,6 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
   :deep(svg) {
     color: rgba(0, 0, 0, 0.45);
     font-size: 14px;
-    margin-top: 6px;
   }
 }
 
@@ -529,7 +553,7 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
   border-radius: 8px;
   color: rgba(0, 0, 0, 0.65);
   display: inline-flex;
-  font-size: 14px;
+  font-size: 12px;
   gap: 6px;
   line-height: 20px;
   min-height: 28px;

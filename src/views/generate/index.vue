@@ -20,11 +20,11 @@
                 <div class="prompt-text-wrap">
                   <div class="prompt-text">{{ item.prompt }}</div>
                   <div class="prompt-tags">
-                    <button type="button" class="prompt-tag">
+                    <button type="button" class="prompt-tag" @click="applyPromptToPanel(item.prompt)">
                       <IconFont type="icon-shiyongtishici" />
                       <span>使用提示词</span>
                     </button>
-                    <button type="button" class="prompt-tag">
+                    <button type="button" class="prompt-tag" @click="copyPrompt(item.prompt)">
                       <IconFont type="icon-fuzhi" />
                       <span>复制</span>
                     </button>
@@ -38,11 +38,15 @@
                 </div>
                 <div class="meta-item"><span>智能匹配</span></div>
                 <div class="meta-item"><span>{{ item.sizeLabel }}</span></div>
-                <div class="meta-item"><span>{{ item.countLabel }}</span></div>
+                <div class="meta-item"><span>{{ displayCountLabel(item) }}</span></div>
                 <div class="meta-item"><span>{{ item.ratioLabel }}</span></div>
               </div>
 
-              <div class="grid-wrap" :style="{ '--result-aspect-ratio': aspectRatioCss(item.aspectRatio || item.ratioLabel) }">
+              <div
+                class="grid-wrap"
+                :class="{ 'is-video-grid': item.mediaType === 'VIDEO' }"
+                :style="{ '--result-aspect-ratio': aspectRatioCss(item.aspectRatio || item.ratioLabel) }"
+              >
                 <div
                   v-for="slotIndex in slotCount(item)"
                   :key="`${item.taskId}-slot-${slotIndex}`"
@@ -51,21 +55,19 @@
                   @click="item.resultImages[slotIndex - 1] ? openPreviewDetail(item.taskId, slotIndex - 1) : undefined"
                 >
                   <div v-if="item.resultImages[slotIndex - 1]" class="grid-item-content">
-                    <img class="grid-image" :src="item.resultImages[slotIndex - 1]" :alt="`preview-${slotIndex}`" />
+                    <video
+                      v-if="isVideoResult(item, item.resultImages[slotIndex - 1])"
+                      class="grid-image grid-video"
+                      :src="item.resultImages[slotIndex - 1]"
+                      :controls="isVideoControlsVisible(item.taskId, slotIndex - 1)"
+                      playsinline
+                      preload="metadata"
+                      @mouseenter="onVideoHoverEnter($event, item.taskId, slotIndex - 1)"
+                      @mouseleave="onVideoHoverLeave($event, item.taskId, slotIndex - 1)"
+                    />
+                    <img v-else class="grid-image" :src="item.resultImages[slotIndex - 1]" :alt="`preview-${slotIndex}`" />
 
-                    <div class="grid-image-actions">
-                      <button type="button" class="grid-image-action" aria-label="下载" @click.stop.prevent="noopAction">
-                        <IconFont type="icon-xiazai" />
-                      </button>
-                      <button type="button" class="grid-image-action" aria-label="删除" @click.stop.prevent="noopAction">
-                        <IconFont type="icon-shanchu" />
-                      </button>
-                      <button type="button" class="grid-image-action" aria-label="收藏" @click.stop.prevent="noopAction">
-                        <IconFont type="icon-shoucang" />
-                      </button>
-                    </div>
-
-                    <div class="grid-image-footer-actions">
+                    <!-- <div class="grid-image-footer-actions">
                       <button
                         type="button"
                         class="grid-image-action grid-image-action-disabled"
@@ -74,39 +76,94 @@
                       >
                         <IconFont type="icon-Outlined-chaofenbianshuai" />
                       </button>
-                      <button type="button" class="grid-image-action" aria-label="作为参考图" @click.stop.prevent="noopAction">
-                        <IconFont type="icon-zuoweicankaotu" />
-                      </button>
-                      <button type="button" class="grid-image-action" aria-label="图生视频" @click.stop.prevent="noopAction">
-                        <IconFont type="icon-tushengshipin" />
-                      </button>
-                    </div>
+                      <a-tooltip title="参考生图" placement="top">
+                        <button
+                          type="button"
+                          class="grid-image-action"
+                          aria-label="作为参考图"
+                          @click.stop.prevent="noopAction"
+                        >
+                          <IconFont type="icon-zuoweicankaotu" />
+                        </button>
+                      </a-tooltip>
+                      <a-tooltip title="图生视频" placement="top">
+                        <button
+                          type="button"
+                          class="grid-image-action"
+                          aria-label="图生视频"
+                          @click.stop.prevent="noopAction"
+                        >
+                          <IconFont type="icon-tushengshipin" />
+                        </button>
+                      </a-tooltip>
+                    </div> -->
                   </div>
 
                   <div v-else class="grid-item-content pending-grid-content">
                     <ASkeletonImage class="pending-skeleton-image" :active="item.status !== 'FAILED' && item.status !== 'CANCELLED'" />
                     <div class="pending-title">{{ pendingTitle(item) }}</div>
                     <div class="pending-subtitle">{{ pendingSubtitle(item) }}</div>
+                    <div v-if="pendingProgress(item)" class="pending-progress">{{ pendingProgress(item) }}</div>
                     <ASpin v-if="item.status !== 'FAILED' && item.status !== 'CANCELLED'" size="small" />
                   </div>
                 </div>
               </div>
 
               <div class="actions-row">
-                <button type="button" class="action-button">
+                <!-- <button type="button" class="action-button">
                   <IconFont type="icon-zhongxinbianji" />
                   <span>重新编辑</span>
                 </button>
                 <button type="button" class="action-button">
                   <IconFont type="icon-zaicishengcheng" />
                   <span>再次生成</span>
+                </button> -->
+                <button
+                  v-if="item.historyId"
+                  type="button"
+                  class="action-button icon-only favorite-action"
+                  :class="{ 'is-active': item.isFavorite }"
+                  :aria-label="item.isFavorite ? '取消收藏' : '收藏'"
+                  @click="toggleItemFavorite(item)"
+                >
+                  <span class="favorite-action-star" aria-hidden="true"></span>
                 </button>
-                <button type="button" class="action-button icon-only" aria-label="删除" @click="removeHistoryItem(item.taskId)">
+                <button
+                  v-else
+                  type="button"
+                  class="action-button icon-only action-button-disabled favorite-action"
+                  aria-label="收藏"
+                  @click="notifyHistoryUnavailable"
+                >
+                  <span class="favorite-action-star" aria-hidden="true"></span>
+                </button>
+                <a-popconfirm
+                  v-if="item.historyId"
+                  placement="topRight"
+                  title="确认删除该条历史吗？"
+                  ok-text="删除"
+                  cancel-text="取消"
+                  @confirm="removeHistoryItem(item.taskId)"
+                >
+                  <button type="button" class="action-button icon-only" aria-label="删除">
+                    <IconFont type="icon-shanchu" />
+                  </button>
+                </a-popconfirm>
+                <button
+                  v-else
+                  type="button"
+                  class="action-button icon-only action-button-disabled"
+                  aria-label="删除"
+                  @click="notifyHistoryUnavailable"
+                >
                   <IconFont type="icon-shanchu" />
                 </button>
               </div>
             </article>
-            <div v-if="!historyItems.length" class="history-empty">暂无历史任务，先去生成一条吧</div>
+            <div v-if="!historyItems.length && !historyLoading && !historyError" class="history-empty">暂无历史任务，先去生成一条吧</div>
+            <div v-if="historyLoadingMore" class="history-loading-more">加载更多中...</div>
+            <div v-if="historyLoading && !historyItems.length" class="history-loading-more">历史记录加载中...</div>
+            <div v-if="historyError && !historyItems.length" class="history-empty">{{ historyError }}</div>
           </div>
         </section>
 
@@ -117,6 +174,7 @@
               <IconFont type="icon-down" />
             </button>
             <GenerateTabPanel
+              ref="generatePanelRef"
               class="generate-tab-panel"
               v-model:showMini="showMini"
               pollMode="external"
@@ -137,9 +195,9 @@
 
 <script setup lang="ts">
 import { createFromIconfontCN } from '@ant-design/icons-vue'
-import { Skeleton as ASkeleton, Spin as ASpin } from 'ant-design-vue'
+import { message, Skeleton as ASkeleton, Spin as ASpin } from 'ant-design-vue'
 import GenerateTabPanel from '@/components/GenerateTabPanel.vue'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import InspirationDetailModal, { type InspirationDetailItem } from '@/components/InspirationDetailModal.vue'
 import { useGenerateTasksStore, type GenerateHistoryItem, type GenerateTaskCreatedPayload } from '@/stores/generateTasks'
 
@@ -148,18 +206,31 @@ const ASkeletonImage = ASkeleton.Image
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
 })
+type GenerateTabPanelExpose = {
+  setPrompt: (value: string) => void
+}
 
 const scrollContainerRef = ref<HTMLElement | null>(null)
+const generatePanelRef = ref<GenerateTabPanelExpose | null>(null)
 const showMini = ref(false)
 const detailOpen = ref(false)
 const detailItem = ref<InspirationDetailItem | null>(null)
+const detailHistoryIndex = ref(-1)
+const hoveredVideoSlotKey = ref<string | null>(null)
 const generateTasksStore = useGenerateTasksStore()
 const historyItems = computed(() => generateTasksStore.items)
+const historyLoading = computed(() => generateTasksStore.historyLoading)
+const historyLoadingMore = computed(() => generateTasksStore.historyLoadingMore)
+const historyError = computed(() => generateTasksStore.historyError)
 
 const handleScroll = () => {
   if (scrollContainerRef.value) {
     const { scrollTop, clientHeight, scrollHeight } = scrollContainerRef.value
     showMini.value = scrollTop + clientHeight < scrollHeight - 1
+    const remain = scrollHeight - (scrollTop + clientHeight)
+    if (remain < 180) {
+      void generateTasksStore.loadHistoryPage(false)
+    }
   }
 }
 
@@ -200,43 +271,185 @@ const pendingSubtitle = (item: GenerateHistoryItem) => {
   return item.progressText || '任务正在处理'
 }
 
+const pendingProgress = (item: GenerateHistoryItem) => {
+  if (item.status === 'FAILED' || item.status === 'CANCELLED') return ''
+  if (typeof item.progress !== 'number' || !Number.isFinite(item.progress)) return ''
+  const value = Math.max(0, Math.min(100, item.progress))
+  return `${Math.round(value)}%`
+}
+
+const displayCountLabel = (item: GenerateHistoryItem) => {
+  if (item.mediaType !== 'VIDEO') return item.countLabel
+  const digits = String(item.countLabel || '').replace(/[^\d]/g, '')
+  if (!digits) return item.countLabel || '-'
+  return `${digits}秒`
+}
+
+const isVideoUrl = (url: string) => /\.(mp4|webm|mov|m4v|m3u8)(\?|#|$)/i.test(String(url || ''))
+
+const isVideoResult = (item: GenerateHistoryItem, url: string) => item.mediaType === 'VIDEO' || isVideoUrl(url)
+
+const videoSlotKey = (taskId: string, idx: number) => `${taskId}-${idx}`
+
+const isVideoControlsVisible = (taskId: string, idx: number) => hoveredVideoSlotKey.value === videoSlotKey(taskId, idx)
+
+const onVideoHoverEnter = async (event: Event, taskId: string, idx: number) => {
+  const target = event.currentTarget as HTMLVideoElement | null
+  if (!target) return
+  hoveredVideoSlotKey.value = videoSlotKey(taskId, idx)
+  try {
+    target.currentTime = 0
+    await target.play()
+  } catch {
+    // noop
+  }
+}
+
+const onVideoHoverLeave = (event: Event, taskId: string, idx: number) => {
+  const target = event.currentTarget as HTMLVideoElement | null
+  if (!target) return
+  if (hoveredVideoSlotKey.value === videoSlotKey(taskId, idx)) {
+    hoveredVideoSlotKey.value = null
+  }
+  target.pause()
+  target.currentTime = 0
+}
+
 const aspectRatioCss = (ratioLabel: string) => {
   const match = String(ratioLabel || '').match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/)
   if (!match) return '1/1'
   return `${match[1]}/${match[2]}`
 }
 
-const openPreviewDetail = (taskId: string, idx: number) => {
-  const item = historyItems.value.find((row) => row.taskId === taskId)
+const toDetailThumbnails = (item: GenerateHistoryItem) =>
+  item.resultImages.map((src, imageIndex) => {
+    const thumbType: 'VIDEO' | 'IMAGE' = isVideoResult(item, src) ? 'VIDEO' : 'IMAGE'
+    return {
+      id: `preview-${item.taskId}-${imageIndex}`,
+      src,
+      type: thumbType,
+    }
+  })
+
+const switchDetailHistory = (step: -1 | 1) => {
+  const list = historyItems.value
+  if (!list.length) return
+  let cursor = detailHistoryIndex.value
+  for (let tries = 0; tries < list.length; tries += 1) {
+    cursor = (cursor + step + list.length) % list.length
+    if (list[cursor]?.resultImages?.length) {
+      openDetailByHistoryIndex(cursor, 0)
+      return
+    }
+  }
+}
+
+const openDetailByHistoryIndex = (historyIndex: number, mediaIndex = 0) => {
+  const item = historyItems.value[historyIndex]
   if (!item || !item.resultImages.length) return
+  const thumbnails = toDetailThumbnails(item)
+  const safeIndex = Math.min(Math.max(mediaIndex, 0), item.resultImages.length - 1)
+  const currentSrc = item.resultImages[safeIndex] || item.resultImages[0]
+  const currentType = isVideoResult(item, currentSrc) ? 'VIDEO' : 'IMAGE'
 
-  const thumbnails = item.resultImages.map((src, imageIndex) => ({
-    id: `preview-${imageIndex}`,
-    src,
-    type: 'IMAGE' as const,
-  }))
-
+  detailHistoryIndex.value = historyIndex
   detailItem.value = {
-    type: 'IMAGE',
-    src: item.resultImages[idx] || item.resultImages[0],
+    type: currentType,
+    src: currentSrc,
     thumbnails,
     avatar: item.inputImages[0],
     createdAt: item.createdAt,
     prompt: item.prompt,
     model: item.modelLabel,
-    primaryTag: '文生图',
+    primaryTag: item.mediaType === 'VIDEO' ? '文生视频' : '文生图',
     ratioOrRes: item.ratioLabel,
-    durationOrCount: item.countLabel,
+    durationOrCount: displayCountLabel(item),
     sizeLabel: item.sizeLabel,
+    onPrev: () => switchDetailHistory(-1),
+    onNext: () => switchDetailHistory(1),
   }
   detailOpen.value = true
 }
 
+const openPreviewDetail = (taskId: string, idx: number) => {
+  const historyIndex = historyItems.value.findIndex((row) => row.taskId === taskId)
+  if (historyIndex < 0) return
+  openDetailByHistoryIndex(historyIndex, idx)
+}
+
 const removeHistoryItem = (taskId: string) => {
-  generateTasksStore.removeTask(taskId)
+  void (async () => {
+    try {
+      await generateTasksStore.deleteHistoryById(taskId)
+      message.success('删除成功')
+    } catch (error) {
+      message.error(resolveErrorMessage(error, '删除失败'))
+    }
+  })()
 }
 
 const noopAction = () => {}
+void noopAction
+
+const notifyHistoryUnavailable = () => {
+  message.warning('任务未入历史，暂不可操作')
+}
+
+const toggleItemFavorite = async (item: GenerateHistoryItem) => {
+  if (!item.historyId) {
+    notifyHistoryUnavailable()
+    return
+  }
+  try {
+    await generateTasksStore.toggleHistoryFavorite(item.taskId)
+  } catch (error) {
+    message.error(resolveErrorMessage(error, '收藏操作失败'))
+  }
+}
+
+const resolveErrorMessage = (error: unknown, fallback: string) => {
+  const maybe = error as { response?: { data?: { detail?: string; message?: string } }; message?: string; detail?: string }
+  return maybe?.response?.data?.detail || maybe?.response?.data?.message || maybe?.detail || maybe?.message || fallback
+}
+
+const applyPromptToPanel = (text: string) => {
+  const nextPrompt = String(text || '').trim()
+  if (!nextPrompt) {
+    message.warning('当前提示词为空')
+    return
+  }
+  generatePanelRef.value?.setPrompt(nextPrompt)
+}
+
+const copyPrompt = async (text: string) => {
+  const nextPrompt = String(text || '').trim()
+  if (!nextPrompt) {
+    message.warning('当前提示词为空')
+    return
+  }
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(nextPrompt)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = nextPrompt
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    message.success('复制成功')
+  } catch {
+    message.error('复制失败，请重试')
+  }
+}
+
+onMounted(() => {
+  void generateTasksStore.loadHistoryPage(true)
+})
 </script>
 
 <style scoped lang="scss">
@@ -347,6 +560,8 @@ const noopAction = () => {}
   overflow-wrap: break-word;
   position: relative;
   word-break: break-word;
+  display: flex;
+  align-items: center;
 }
 
 .prompt-text {
@@ -357,7 +572,6 @@ const noopAction = () => {}
   overflow: hidden;
   text-overflow: ellipsis;
   transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  width: 100%;
 }
 
 .prompt-tags {
@@ -409,7 +623,7 @@ const noopAction = () => {}
   border-radius: 8px;
   color: rgba(0, 0, 0, 0.65);
   display: flex;
-  font-size: 14px;
+  font-size: 12px;
   gap: 4px;
   height: 28px;
   line-height: 20px;
@@ -430,6 +644,10 @@ const noopAction = () => {}
   overflow: hidden;
   position: relative;
   width: 100%;
+}
+
+.grid-wrap.is-video-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .grid-item {
@@ -476,6 +694,13 @@ const noopAction = () => {}
   max-width: 80%;
 }
 
+.pending-progress {
+  color: rgba(105, 40, 254, 0.92);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
 .is-loading-slot {
   cursor: default;
 }
@@ -508,12 +733,15 @@ const noopAction = () => {}
   width: 100%;
 }
 
+.grid-video {
+  background: #000;
+}
+
 .grid-item :deep(.anticon) {
   color: #fff;
   font-size: 16px;
 }
 
-.grid-image-actions,
 .grid-image-footer-actions {
   align-items: center;
   backdrop-filter: blur(30px);
@@ -528,15 +756,10 @@ const noopAction = () => {}
   transition: all 0.3s ease;
 }
 
-.grid-image-actions {
-  top: 8px;
-}
-
 .grid-image-footer-actions {
   bottom: 8px;
 }
 
-.grid-item:hover .grid-image-actions,
 .grid-item:hover .grid-image-footer-actions {
   height: 28px;
   padding: 2px;
@@ -591,8 +814,38 @@ const noopAction = () => {}
   width: 32px;
 }
 
+.favorite-action-star {
+  align-items: center;
+  display: inline-flex;
+  font-size: 15px;
+  height: 16px;
+  justify-content: center;
+  line-height: 1;
+  width: 16px;
+}
+
+.favorite-action-star::before {
+  color: rgba(0, 0, 0, 0.65);
+  content: '☆';
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.favorite-action:hover .favorite-action-star::before {
+  transform: scale(1.06);
+}
+
+.favorite-action.is-active .favorite-action-star::before {
+  color: rgba(0, 0, 0, 0.88);
+  content: '★';
+}
+
+.action-button-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .chat-section-wrapper {
-  bottom: 24px;
+  bottom: 20px;
   margin: 0 auto;
   overflow-anchor: none;
   position: sticky;
@@ -641,13 +894,21 @@ const noopAction = () => {}
 
 .page-footer {
   background-color: #fff;
-  bottom: 4px;
+  bottom: 0;
   color: rgba(0, 0, 0, 0.45);
   font-size: 10px;
   left: 0;
   line-height: 20px;
   position: fixed;
   right: 0;
+  text-align: center;
+}
+
+.history-loading-more {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+  line-height: 36px;
+  padding: 12px 0 20px;
   text-align: center;
 }
 

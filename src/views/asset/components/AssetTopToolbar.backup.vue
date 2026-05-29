@@ -14,13 +14,12 @@
               class="search-input-ant"
               placeholder="搜索提示词"
               size="small"
+              @pressEnter="emitSearch"
+              allowClear
             >
-              <template #prefix>
-                  <SearchOutlined class="model-search-icon" />
-              </template>
-              <template #suffix>
-                <CloseCircleFilled v-show="queryProxy" class="search-clear-icon" @click="clearSearch" />
-              </template>
+            <template #prefix>
+              <SearchOutlined class="model-search-icon" />
+          </template>
           </a-input>
             <a-button
               class="search-submit-ant"
@@ -94,12 +93,7 @@
             <div class="time-popover-inner">
               <div class="time-range-row">
                 <a-range-picker
-                  class="time-input-ant"
-                  :value="rangePickerValue"
-                  value-format="x"
-                  :placeholder="['开始时间', '结束时间']"
-                  @change="onRangeChange"
-                >
+                  class="time-input-ant">
                 </a-range-picker>
               </div>
               <div class="quick-time-grid">
@@ -133,29 +127,24 @@
     </div>
     <div v-if="batchMode" class="batch-actions">
       <span class="selected-count">{{ selectedCount }} 已选择</span>
-      <button
-        type="button"
-        class="action-btn"
-        :disabled="selectedCount === 0 || batchActionLoading"
-        @click="emitAction('favorite')"
-      >
+      <button type="button" class="action-btn" :disabled="selectedCount === 0" @click="emitAction('favorite')">
         <StarOutlined />
         <span>收藏</span>
       </button>
-      <!-- <button type="button" class="action-btn" :disabled="selectedCount === 0" @click="emitAction('download')">
+      <button type="button" class="action-btn" :disabled="selectedCount === 0" @click="emitAction('download')">
         <DownloadOutlined />
         <span>下载</span>
-      </button> -->
+      </button>
       <button
         type="button"
         class="action-btn danger"
-        :disabled="selectedCount === 0 || batchActionLoading"
+        :disabled="selectedCount === 0"
         @click="emitAction('delete')"
       >
         <DeleteOutlined />
         <span>删除</span>
       </button>
-      <button type="button" class="cancel-btn" :disabled="batchActionLoading" @click="cancelBatchSelection">
+      <button type="button" class="cancel-btn" @click="cancelBatchSelection">
         <CloseOutlined />
         <span>取消选择</span>
       </button>
@@ -167,9 +156,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   CalendarOutlined,
-  CloseCircleFilled,
   CloseOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   FilterOutlined,
   InboxOutlined,
   SearchOutlined,
@@ -178,13 +167,11 @@ import {
 
 interface Props {
   batchMode: boolean
-  batchActionLoading?: boolean
   modelOptions: string[]
   query: string
   selectedCount: number
   selectedModels: string[]
   timePreset: string
-  timeRange?: [number, number] | null
 }
 
 const props = defineProps<Props>()
@@ -196,7 +183,6 @@ const emit = defineEmits<{
   'update:query': [value: string]
   'update:selectedModels': [models: string[]]
   'update:timePreset': [value: string]
-  'update:timeRange': [value: [number, number] | null]
   'cancel-selection': []
 }>()
 
@@ -224,35 +210,14 @@ const allModelOptions = computed(() => ['全部', ...props.modelOptions])
 
 const visibleModelOptions = computed(() => {
   const keyword = modelKeyword.value.trim().toLowerCase()
+  console.log(allModelOptions.value, 'allModelOptions')
   if (!keyword) return allModelOptions.value
   return allModelOptions.value.filter((model) => model.toLowerCase().includes(keyword))
-})
-
-const getPresetTimeRange = (preset: string): [number, number] | null => {
-  if (preset === 'all') return null
-  const now = Date.now()
-  const dayMs = 24 * 60 * 60 * 1000
-  if (preset === 'week') return [now - 7 * dayMs, now]
-  if (preset === 'month') return [now - 30 * dayMs, now]
-  if (preset === 'quarter') return [now - 90 * dayMs, now]
-  return null
-}
-
-const rangePickerValue = computed<[string, string] | undefined>(() => {
-  const range = props.timeRange ?? getPresetTimeRange(props.timePreset)
-  if (!range) return undefined
-  const [min, max] = range
-  return [String(min), String(max)]
 })
 
 const emitSearch = () => {
   if (!props.query.trim()) return
   emit('search')
-}
-
-const clearSearch = () => {
-  queryProxy.value = ''
-  emitSearch()
 }
 
 const expandSearch = async () => {
@@ -312,20 +277,6 @@ const onTimeOpenChange = (open: boolean) => {
 
 const selectTime = (preset: string) => {
   emit('update:timePreset', preset)
-  emit('update:timeRange', getPresetTimeRange(preset))
-}
-
-const onRangeChange = (_dates: unknown, dateStrings: [string, string] | string[]) => {
-  const [start, end] = Array.isArray(dateStrings) ? dateStrings : []
-  const min = Number(start)
-  const max = Number(end)
-  if (!Number.isFinite(min) || !Number.isFinite(max)) {
-    emit('update:timePreset', 'all')
-    emit('update:timeRange', null)
-    return
-  }
-  emit('update:timePreset', 'all')
-  emit('update:timeRange', [min, max])
 }
 
 const toggleBatch = () => {
@@ -548,10 +499,6 @@ onBeforeUnmount(() => {
   padding: 16px 0;
 }
 
-:global(.asset-time-popover .ant-popover-inner){
-  padding: 12px;
-}
-
 .model-popover-inner {
   padding: 0 16px;
   width: 232px;
@@ -583,11 +530,6 @@ onBeforeUnmount(() => {
 .model-search-icon {
   font-size: 14px;
   color: rgba(0, 0, 0, 0.35);
-}
-.search-clear-icon{
-  font-size: 14px;
-  color: rgba(0, 0, 0, 0.35);
-  cursor: pointer;
 }
 
 .model-option-list {

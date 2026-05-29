@@ -48,6 +48,7 @@
 
         <div class="editor-wrap">
           <textarea
+            ref="promptTextareaRef"
             v-model="prompt"
             :placeholder="placeholder"
             rows="1"
@@ -340,9 +341,22 @@ interface ImageTaskPayload {
   image_size: string
 }
 
+interface VideoTaskPayload {
+  prompt: string
+  model_id: number
+  task_type: string
+  model_name: string
+  aspect_ratio?: string
+  resolution?: string
+  duration?: string
+}
+
+type TaskCreatePayload = ImageTaskPayload | VideoTaskPayload
+
 interface TaskCreatedEventPayload {
   taskId: string
-  payload: ImageTaskPayload
+  payload: TaskCreatePayload
+  mediaType: 'IMAGE' | 'VIDEO'
   displayMeta: {
     prompt: string
     modelLabel: string
@@ -393,6 +407,7 @@ const VIDEO_MODEL_ICON = 'https://img.alicdn.com/imgextra/i2/O1CN01CHQQzM1otcX7x
 
 const mode = ref<ModeKey>('IMAGE')
 const prompt = ref('')
+const promptTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const modelOpen = ref(false)
 const smartOpen = ref(false)
@@ -516,6 +531,11 @@ function clearReferencePreview() {
 function setReferencePreview(file: File) {
   clearReferencePreview()
   referenceImagePreviewUrl.value = URL.createObjectURL(file)
+}
+
+function resetComposerInputs() {
+  prompt.value = ''
+  onRemoveReferenceImage()
 }
 
 function readFileAsDataUrl(file: File) {
@@ -896,6 +916,20 @@ function normalizeImageSize(raw: string) {
   return trimmed || '2K'
 }
 
+function normalizeResolution(raw: string) {
+  return String(raw || '').trim()
+}
+
+function normalizeDuration(raw: string) {
+  const digits = String(raw || '').replace(/[^\d]/g, '')
+  return digits || ''
+}
+
+function durationDisplayText(raw: string) {
+  const duration = normalizeDuration(raw)
+  return duration ? `${duration}s` : '-'
+}
+
 function getErrorMessage(err: unknown, fallback: string) {
   const maybe = err as {
     response?: { data?: { detail?: string; error?: string; message?: string } }
@@ -996,14 +1030,47 @@ function buildImageTaskPayload(): ImageTaskPayload | null {
   if (!currentModel.value) return null
   const taskType = currentModel.value.taskType || currentModel.value.runwayModel || ''
   if (!taskType || !currentModel.value.modelId) return null
+  const modelName = currentModel.value.name?.trim() || taskType
   return {
     prompt: prompt.value.trim(),
     model_id: currentModel.value.modelId,
     task_type: taskType,
-    model_name: taskType,
+    model_name: modelName,
     aspect_ratio: normalizeAspectRatio(selectedRatio.value),
     num_images: normalizeNumImages(selectedCount.value),
     image_size: normalizeImageSize(selectedSize.value),
+  }
+}
+
+function buildVideoTaskPayload(): VideoTaskPayload | null {
+  if (!currentModel.value) return null
+  const taskType = currentModel.value.taskType || currentModel.value.runwayModel || ''
+  if (!taskType || !currentModel.value.modelId) return null
+  const modelName = currentModel.value.name?.trim() || taskType
+  const payload: VideoTaskPayload = {
+    prompt: prompt.value.trim(),
+    model_id: currentModel.value.modelId,
+    task_type: taskType,
+    model_name: modelName,
+  }
+  const aspectRatio = normalizeAspectRatio(selectedRatio.value)
+  if (aspectRatio) payload.aspect_ratio = aspectRatio
+  const resolution = normalizeResolution(selectedSize.value)
+  if (resolution) payload.resolution = resolution
+  const duration = normalizeDuration(selectedCount.value)
+  if (duration) payload.duration = duration
+  return payload
+}
+
+function appendTaskPayloadToFormData(formData: FormData, payload: TaskCreatePayload) {
+  formData.append('prompt', payload.prompt)
+  formData.append('model_id', String(payload.model_id))
+  formData.append('task_type', payload.task_type)
+  formData.append('model_name', payload.model_name)
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === 'prompt' || key === 'model_id' || key === 'task_type' || key === 'model_name') continue
+    if (value === undefined || value === null || value === '') continue
+    formData.append(key, String(value))
   }
 }
 
@@ -1120,12 +1187,13 @@ function selectModel(modelItem: ModelItem) {
 async function onGenerate() {
   if (!canGenerate.value || isSubmitting.value) return
 
-  if (isVideo.value) {
-    message.info('视频生成接口暂未接入')
+  const isVideoTask = isVideo.value
+  if (isVideoTask && videoModelTab.value === 'vid2video') {
+    message.info('视频生视频接口暂未接入')
     return
   }
 
-  const payload = buildImageTaskPayload()
+  const payload = isVideoTask ? buildVideoTaskPayload() : buildImageTaskPayload()
   if (!payload) {
     message.error(currentModel.value ? '该模型缺少任务类型配置，无法创建任务' : '暂无可用模型，请稍后重试')
     return
@@ -1141,15 +1209,17 @@ async function onGenerate() {
   try {
     clearPollingTask()
     let createRes: TaskCreateResponse
-    if (referenceImageFile.value) {
+    const shouldUseImageEndpoint = !isVideoTask
+      ? Boolean(referenceImageFile.value)
+      : videoModelTab.value === 'img2video'
+
+    if (isVideoTask && videoModelTab.value === 'img2video' && !referenceImageFile.value) {
+      throw new Error('请先上传首帧')
+    }
+
+    if (shouldUseImageEndpoint && referenceImageFile.value) {
       const formData = new FormData()
-      formData.append('prompt', payload.prompt)
-      formData.append('model_id', String(payload.model_id))
-      formData.append('task_type', payload.task_type)
-      formData.append('model_name', payload.model_name)
-      formData.append('aspect_ratio', payload.aspect_ratio)
-      formData.append('num_images', String(payload.num_images))
-      formData.append('image_size', payload.image_size)
+      appendTaskPayloadToFormData(formData, payload)
       formData.append('image', referenceImageFile.value)
       createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks/with-image', formData)
     } else {
@@ -1162,21 +1232,26 @@ async function onGenerate() {
 
     const taskId = createRes.task_id
     createdTaskId = taskId
+    const ratioLabel = normalizeAspectRatio(selectedRatio.value)
+    const sizeLabel = isVideoTask ? (normalizeResolution(selectedSize.value) || '-') : selectedSize.value
+    const countLabel = isVideoTask ? durationDisplayText(selectedCount.value) : countDisplayText(selectedCount.value)
     const taskCreatedPayload: TaskCreatedEventPayload = {
       taskId,
       payload,
+      mediaType: isVideoTask ? 'VIDEO' : 'IMAGE',
       displayMeta: {
         prompt: payload.prompt,
         modelLabel: currentModel.value?.name || '未知模型',
-        ratioLabel: payload.aspect_ratio,
-        sizeLabel: selectedSize.value,
-        countLabel: countDisplayText(selectedCount.value),
+        ratioLabel,
+        sizeLabel,
+        countLabel,
       },
       inputImages: await buildInputImagesForEmit(),
-      expectedCount: payload.num_images,
+      expectedCount: isVideoTask ? 1 : normalizeNumImages(selectedCount.value),
     }
     emit('task-created', taskCreatedPayload)
-    message.success(`任务创建成功：${taskId}`)
+    message.success(`任务创建成功，正在生成中...`)
+    resetComposerInputs()
     if (props.pollMode === 'internal') {
       await pollTaskStatus(taskId)
     }
@@ -1196,6 +1271,20 @@ async function onGenerate() {
 function onTextareaFocus() {
   if (props.showMini) emit('update:showMini', false)
 }
+
+function setPrompt(value: string) {
+  prompt.value = String(value || '')
+  onTextareaFocus()
+  requestAnimationFrame(() => {
+    promptTextareaRef.value?.focus()
+    const length = prompt.value.length
+    promptTextareaRef.value?.setSelectionRange(length, length)
+  })
+}
+
+defineExpose({
+  setPrompt,
+})
 
 onMounted(() => {
   void loadModelsFromApi()
@@ -1653,8 +1742,7 @@ onBeforeUnmount(() => {
     transition: min-width 0.26s ease, padding 0.26s ease, background-color 0.2s ease;
 
     &.has-cost {
-      min-width: 84px;
-      padding: 0 14px;
+      
     }
 
     &:hover:not(:disabled) {

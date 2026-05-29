@@ -17,6 +17,7 @@ export interface GenerateTaskCreatedPayload {
   displayMeta: GenerateTaskDisplayMeta
   inputImages?: string[]
   expectedCount?: number
+  mediaType?: 'IMAGE' | 'VIDEO'
 }
 
 interface TaskArtifact {
@@ -47,8 +48,41 @@ interface TaskStatusEnvelope {
   result?: TaskStatusResponse
 }
 
+interface HistoryParameters {
+  aspect_ratio?: string
+  image_size?: string
+  num_images?: number | string
+  resolution?: string
+  duration?: number | string
+  model_name?: string
+}
+
+interface HistoryItemResponse {
+  id?: number | string
+  prompt?: string
+  model_id?: number | string
+  model_name?: string
+  media_type?: 'IMAGE' | 'VIDEO' | 'MUSIC'
+  status?: string
+  result_urls?: string[]
+  parameters?: HistoryParameters
+  error_message?: string | null
+  is_favorite?: boolean
+  replicate_id?: string | null
+  created_at?: string
+}
+
+interface HistoryListResponse {
+  total?: number
+  page?: number
+  page_size?: number
+  items?: HistoryItemResponse[]
+}
+
 export interface GenerateHistoryItem {
   taskId: string
+  historyId?: number | string
+  mediaType: 'IMAGE' | 'VIDEO'
   status: GenerateTaskStatus
   createdAt: string
   prompt: string
@@ -60,6 +94,7 @@ export interface GenerateHistoryItem {
   expectedCount: number
   inputImages: string[]
   resultImages: string[]
+  isFavorite: boolean
   progress?: number
   progressText?: string
   errorMessage?: string
@@ -127,8 +162,79 @@ function normalizeTaskStatusResponse(payload: TaskStatusResponse | TaskStatusEnv
   return {} as TaskStatusResponse
 }
 
+function normalizeHistoryStatus(statusRaw: unknown): GenerateTaskStatus {
+  const status = String(statusRaw || '').toLowerCase()
+  if (status === 'pending') return 'PENDING'
+  if (status === 'processing') return 'RUNNING'
+  if (status === 'completed') return 'SUCCEEDED'
+  if (status === 'failed') return 'FAILED'
+  if (status === 'cancelled') return 'CANCELLED'
+  return 'RUNNING'
+}
+
+function toPositiveInt(value: unknown): number | undefined {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) return undefined
+  return Math.floor(parsed)
+}
+
+function normalizeResultUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+}
+
+function mapHistoryItemToStoreItem(item: HistoryItemResponse): GenerateHistoryItem {
+  const params = item.parameters || {}
+  const ratio = String(params.aspect_ratio || '').trim() || '智能匹配'
+  const imageSize = String(params.image_size || '').trim()
+  const resolution = String(params.resolution || '').trim()
+  const duration = toPositiveInt(params.duration)
+  const numImages = toPositiveInt(params.num_images)
+  const hasVideoHints = Boolean(resolution || duration)
+  const mediaType: 'IMAGE' | 'VIDEO' = item.media_type === 'VIDEO' || hasVideoHints ? 'VIDEO' : 'IMAGE'
+  const sizeLabel = hasVideoHints ? (resolution || '-') : (imageSize || '-')
+  const countLabel = hasVideoHints
+    ? (duration ? `${duration}s` : '-')
+    : (numImages ? `${numImages}张` : '-')
+  const taskId = String(item.replicate_id || '').trim() || `history-${item.id}`
+  const resultImages = normalizeResultUrls(item.result_urls)
+  return {
+    taskId,
+    historyId: item.id,
+    mediaType,
+    status: normalizeHistoryStatus(item.status),
+    createdAt: item.created_at || formatDateTime(new Date()),
+    prompt: String(item.prompt || ''),
+    modelLabel: String(params.model_name || item.model_name || '').trim() || `模型#${item.model_id || '-'}`,
+    ratioLabel: ratio,
+    aspectRatio: ratio,
+    sizeLabel,
+    countLabel,
+    expectedCount: Math.max(1, numImages || resultImages.length || 1),
+    inputImages: [],
+    resultImages,
+    isFavorite: Boolean(item.is_favorite),
+    progress: undefined,
+    progressText: undefined,
+    errorMessage: item.error_message || undefined,
+  }
+}
+
+function createdAtMs(value: string): number {
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 export const useGenerateTasksStore = defineStore('generateTasks', () => {
   const items = ref<GenerateHistoryItem[]>([])
+  const historyPage = ref(0)
+  const historyPageSize = ref(20)
+  const historyTotal = ref(0)
+  const historyLoading = ref(false)
+  const historyLoadingMore = ref(false)
+  const historyError = ref('')
+  const historyInitialized = ref(false)
+  const historyHasMore = ref(true)
 
   const taskIds = new Set<string>()
   const pollTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -237,6 +343,8 @@ export const useGenerateTasksStore = defineStore('generateTasks', () => {
 
     const item: GenerateHistoryItem = {
       taskId: payload.taskId,
+      historyId: undefined,
+      mediaType: payload.mediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
       status: 'PENDING',
       createdAt: formatDateTime(new Date()),
       prompt: payload.displayMeta.prompt,
@@ -248,6 +356,7 @@ export const useGenerateTasksStore = defineStore('generateTasks', () => {
       expectedCount: Math.max(1, payload.expectedCount || parseExpectedCount(payload.displayMeta.countLabel)),
       inputImages: payload.inputImages || [],
       resultImages: [],
+      isFavorite: false,
       progress: 0,
       progressText: '生成中...',
     }
@@ -257,10 +366,94 @@ export const useGenerateTasksStore = defineStore('generateTasks', () => {
     void pollTask(item.taskId)
   }
 
+  function upsertHistoryItems(mappedItems: GenerateHistoryItem[], fromReset: boolean) {
+    if (fromReset) {
+      const historyTaskIds = new Set(mappedItems.map((item) => item.taskId))
+      const localTasks = items.value.filter((item) => !String(item.taskId).startsWith('history-') && !historyTaskIds.has(item.taskId))
+      items.value = [...localTasks]
+    }
+
+    for (const mapped of mappedItems) {
+      const existing = items.value.find((row) => row.taskId === mapped.taskId)
+      if (existing) {
+        Object.assign(existing, mapped)
+      } else {
+        items.value.push(mapped)
+      }
+      taskIds.add(mapped.taskId)
+
+      if ((mapped.status === 'PENDING' || mapped.status === 'RUNNING') && !String(mapped.taskId).startsWith('history-')) {
+        scheduleNext(mapped.taskId)
+      } else if (mapped.status === 'SUCCEEDED' || mapped.status === 'FAILED' || mapped.status === 'CANCELLED') {
+        stopPolling(mapped.taskId)
+      }
+    }
+
+    items.value.sort((a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt))
+  }
+
+  async function loadHistoryPage(reset = false) {
+    if (reset) {
+      if (historyLoading.value) return
+      historyLoading.value = true
+      historyError.value = ''
+    } else {
+      if (historyLoadingMore.value || historyLoading.value || !historyHasMore.value) return
+      historyLoadingMore.value = true
+    }
+
+    try {
+      const targetPage = reset ? 1 : historyPage.value + 1
+      const response = await request.get<unknown, HistoryListResponse>('/api/history', {
+        params: {
+          page: targetPage,
+          page_size: historyPageSize.value,
+        },
+      })
+      const rawItems = Array.isArray(response?.items) ? response.items : []
+      const mappedItems = rawItems.map(mapHistoryItemToStoreItem)
+      upsertHistoryItems(mappedItems, reset)
+
+      historyPage.value = Number(response?.page || targetPage)
+      historyPageSize.value = Number(response?.page_size || historyPageSize.value)
+      historyTotal.value = Number(response?.total || 0)
+      historyHasMore.value = historyPage.value * historyPageSize.value < historyTotal.value
+      historyInitialized.value = true
+    } catch (error) {
+      historyError.value = getErrorMessage(error, '历史记录加载失败')
+      historyInitialized.value = true
+    } finally {
+      if (reset) historyLoading.value = false
+      else historyLoadingMore.value = false
+    }
+  }
+
   function removeTask(taskId: string) {
     stopPolling(taskId)
     taskIds.delete(taskId)
     items.value = items.value.filter((item) => item.taskId !== taskId)
+  }
+
+  async function deleteHistoryById(taskId: string) {
+    const item = items.value.find((row) => row.taskId === taskId)
+    if (!item?.historyId) {
+      throw new Error('任务未入历史，暂不可操作')
+    }
+    await request.delete(`/api/history/${item.historyId}`)
+    removeTask(taskId)
+  }
+
+  async function toggleHistoryFavorite(taskId: string) {
+    const item = items.value.find((row) => row.taskId === taskId)
+    if (!item?.historyId) {
+      throw new Error('任务未入历史，暂不可操作')
+    }
+    const nextFavorite = !item.isFavorite
+    const res = await request.post<unknown, { success?: boolean; is_favorite?: boolean }>(
+      `/api/history/${item.historyId}/favorite`,
+      { favorite: nextFavorite },
+    )
+    item.isFavorite = typeof res?.is_favorite === 'boolean' ? res.is_favorite : nextFavorite
   }
 
   function cleanup() {
@@ -269,16 +462,34 @@ export const useGenerateTasksStore = defineStore('generateTasks', () => {
     }
     taskIds.clear()
     items.value = []
+    historyPage.value = 0
+    historyTotal.value = 0
+    historyLoading.value = false
+    historyLoadingMore.value = false
+    historyError.value = ''
+    historyInitialized.value = false
+    historyHasMore.value = true
   }
 
   return {
     items,
+    historyPage,
+    historyPageSize,
+    historyTotal,
+    historyLoading,
+    historyLoadingMore,
+    historyError,
+    historyInitialized,
+    historyHasMore,
+    loadHistoryPage,
     enqueueTask,
     pollTask,
     applySuccess,
     applyFailure,
     stopPolling,
     removeTask,
+    deleteHistoryById,
+    toggleHistoryFavorite,
     cleanup,
   }
 })

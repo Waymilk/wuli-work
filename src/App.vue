@@ -1,5 +1,6 @@
 <template>
   <a-config-provider
+    :locale="zhCN"
     :theme="{
       algorithm: defaultAlgorithm,
     }"
@@ -10,6 +11,7 @@
 
 <script setup lang="ts">
 import { theme } from 'ant-design-vue'
+import zhCN from 'ant-design-vue/es/locale/zh_CN'
 
 const { defaultAlgorithm } = theme
 </script>

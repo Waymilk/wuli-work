@@ -62,7 +62,7 @@
             <div class="more-popover-menu" @click.stop>
               <button type="button" class="more-popover-item" @click="onMoreMenuAction('agreement')">平台协议</button>
               <button type="button" class="more-popover-item" @click="onMoreMenuAction('feedback')">问题反馈</button>
-              <div
+              <!-- <div
                 class="more-popover-item with-submenu"
                 @mouseenter="openThemeSubmenu"
                 @mouseleave="closeThemeSubmenuWithDelay"
@@ -87,11 +87,11 @@
                     <span class="theme-item-left">◉ 跟随系统 · 浅色</span>
                   </button>
                 </div>
-              </div>
-              <button type="button" class="more-popover-item" @click="onMoreMenuAction('experience')">体验优化计划</button>
-              <button type="button" class="more-popover-item" @click="onMoreMenuAction('watermark')">AI生成水印设置</button>
+              </div> -->
+              <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('experience')">体验优化计划</button> -->
+              <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('watermark')">AI生成水印设置</button> -->
               <button type="button" class="more-popover-item" @click="onMoreMenuAction('account')">账号设置</button>
-              <button type="button" class="more-popover-item" @click="onMoreMenuAction('about')">关于我们</button>
+              <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('about')">关于我们</button> -->
               <button type="button" class="more-popover-item" @click="onMoreMenuAction('logout')">退出</button>
             </div>
           </template>
@@ -409,13 +409,13 @@ const menuItems = [
     icon: '/wuli-icons/nav-asset.svg',
     activeIcon: '/wuli-icons/nav-asset-active.svg',
   },
-  {
-    key: 'canvas',
-    title: '画布',
-    path: '/canvas',
-    icon: '/wuli-icons/nav-canvas.svg',
-    activeIcon: '/wuli-icons/nav-canvas-active.svg',
-  },
+  // {
+  //   key: 'canvas',
+  //   title: '画布',
+  //   path: '/canvas',
+  //   icon: '/wuli-icons/nav-canvas.svg',
+  //   activeIcon: '/wuli-icons/nav-canvas-active.svg',
+  // },
 ]
 
 const inviteModalOpen = ref(false)
