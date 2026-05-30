@@ -20,16 +20,16 @@
       </div>
 
       <div class="bottom">
-        <div class="credit-wrapper" role="button" tabindex="0" @click="openInviteModal">
+        <div v-if="isLoggedIn" class="credit-wrapper" role="button" tabindex="0" @click="openInviteModal">
           <div class="wuli-baby-gif">
             <img src="/wuli-icons/wuli-baby.png" alt="呜哩宝宝" />
           </div>
           <div class="credit-content">
             <div class="credit">
               <img src="/wuli-icons/credit.svg" class="credit-icon" alt="credit" />
-              <span class="credit-text">30</span>
+              <span class="credit-text">{{ creditsDisplay }}</span>
             </div>
-            <span class="invite-tip">邀请有礼</span>
+            <span class="invite-tip">购买积分</span>
           </div>
         </div>
 
@@ -118,124 +118,12 @@
       </div>
     </transition>
 
-    <a-modal
+    <PurchaseCreditsModal
       v-model:open="inviteModalOpen"
-      :footer="null"
-      :width="980"
-      centered
-      :closable="false"
-      wrapClassName="sider-invite-modal"
-    >
-      <button class="wuli-modal-close invite-close" type="button" @click="inviteModalOpen = false">×</button>
-      <div class="invite-modal-content">
-        <div class="invite-user-row">
-          <img class="invite-avatar" src="/wuli-icons/avatar-default.png" alt="avatar" />
-          <span class="invite-username">用户3529_2654</span>
-        </div>
-
-        <div class="invite-summary-grid">
-          <div class="summary-card">
-            <div class="summary-head">
-              <span class="summary-head-left">✦ 当前方案</span>
-              <span class="summary-head-link">订阅管理 ›</span>
-            </div>
-            <div class="summary-value">免费</div>
-            <button type="button" class="summary-action">去兑换</button>
-          </div>
-          <div class="summary-card">
-            <div class="summary-head">
-              <span class="summary-head-left">✦ 积分</span>
-              <span class="summary-head-link">积分详情 ›</span>
-            </div>
-            <div class="summary-value">30</div>
-            <button type="button" class="summary-action">去购买</button>
-          </div>
-          <div class="summary-banner">
-            <div class="summary-banner-title">立即邀请 →</div>
-            <div class="summary-banner-link">我的邀请记录 ›</div>
-          </div>
-        </div>
-
-        <h3 class="plan-title">会员方案</h3>
-        <div class="plan-grid">
-          <div class="plan-card free-plan">
-            <div class="plan-name-row">
-              <h4>免费</h4>
-            </div>
-            <p class="plan-desc">适合初次接触的小白或入门生图用户</p>
-            <div class="plan-price-row">
-              <span class="plan-price">0</span>
-              <span class="plan-unit">元/月</span>
-            </div>
-            <div class="plan-extra">永久</div>
-            <button type="button" class="plan-buy-btn" disabled>免费</button>
-            <ul class="plan-rights">
-              <li>最多同时运行图片任务数量：1个</li>
-              <li>最多同时运行视频任务数量：1个</li>
-              <li>每日赠送积分</li>
-            </ul>
-          </div>
-
-          <div class="plan-card">
-            <div class="plan-name-row">
-              <h4>轻享会员</h4>
-              <span class="plan-badge">限时特惠版</span>
-            </div>
-            <p class="plan-desc">适合入门生图用户</p>
-            <div class="plan-price-row">
-              <span class="plan-price">24</span>
-              <span class="plan-unit">元/月</span>
-              <span class="plan-origin-price">¥39元</span>
-            </div>
-            <div class="plan-extra">6元/100积分</div>
-            <button type="button" class="plan-buy-btn dark">购买</button>
-            <div class="plan-quota-card">
-              <strong>✦ 400积分/月</strong>
-              <span>最多生成400张图片/或20个视频</span>
-            </div>
-            <div class="plan-rights-title">在免费权益基础上有如下权益:</div>
-            <ul class="plan-rights">
-              <li>作品去品牌水印</li>
-              <li>最多同时运行图片任务数量：10个</li>
-              <li>最多同时运行视频任务数量：2个</li>
-              <li>
-                官方Qwen Image系列图片模型
-                <span class="limited-free-tag">限时免费</span>
-              </li>
-            </ul>
-          </div>
-
-          <div class="plan-card">
-            <div class="plan-name-row">
-              <h4>标准会员</h4>
-              <span class="plan-badge">83折</span>
-            </div>
-            <p class="plan-desc">适合专业生图用户和普通视频用户</p>
-            <div class="plan-price-row">
-              <span class="plan-price">249</span>
-              <span class="plan-unit">元/月</span>
-              <span class="plan-origin-price">¥299元</span>
-            </div>
-            <div class="plan-extra">6.5元/100积分</div>
-            <button type="button" class="plan-buy-btn dark">购买</button>
-            <div class="plan-quota-card">
-              <strong>✦ 3800积分/月</strong>
-              <span>最多生成3800张图片/或190个视频</span>
-            </div>
-            <div class="plan-rights-title">在免费权益基础上有如下权益:</div>
-            <ul class="plan-rights">
-              <li>作品去品牌水印</li>
-              <li>最多同时运行图片任务数量：10个</li>
-              <li>最多同时运行视频任务数量：2个</li>
-              <li>
-                官方Qwen Image系列图片模型
-                <span class="limited-free-tag">限时免费</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </a-modal>
+      :username="displayUsername"
+      :credits="creditsValue"
+      @redeemed="handleCreditsRedeemed"
+    />
 
     <a-modal
       v-model:open="avatarModalOpen"
@@ -245,19 +133,25 @@
       :closable="false"
       wrapClassName="sider-mini-modal"
     >
-      <button class="wuli-modal-close" type="button" @click="avatarModalOpen = false">×</button>
+      <button class="wuli-modal-close" type="button" @click="closeProfileModal">×</button>
       <div class="mini-modal-content">
         <div class="avatar-edit-header">
-          <img class="invite-avatar" src="/wuli-icons/avatar-default.png" alt="avatar" />
-          <button type="button" class="avatar-change-btn">更改头像</button>
+          <img class="avatar-edit-image" src="/wuli-icons/avatar-default.png" alt="avatar" />
+          <a-button class="avatar-change-btn" @click="handleAvatarChangeClick">更改头像</a-button>
         </div>
-        <label class="mini-input-label">用户名 *</label>
-        <input class="mini-input" value="用户3529_2654" readonly />
-        <div class="mini-tip">长度2-15个字符，支持中文、英文、数字、下划线、横线</div>
-        <div class="mini-actions">
-          <button type="button" class="btn-ghost" @click="avatarModalOpen = false">暂不修改</button>
-          <button type="button" class="btn-dark" @click="avatarModalOpen = false">确定修改</button>
-        </div>
+        <a-form layout="vertical" class="mini-profile-form" @submit.prevent>
+          <a-form-item label="邮箱" class="mini-form-item">
+            <a-input class="mini-input mini-input-readonly" :value="profileEmail" disabled />
+          </a-form-item>
+          <a-form-item label="用户名" class="mini-form-item">
+            <a-input v-model:value="profileUsernameDraft" class="mini-input" :disabled="isProfileLoading" />
+          </a-form-item>
+          <div class="mini-tip">长度2-15个字符，支持中文、英文、数字、下划线、横线</div>
+          <div class="mini-actions">
+            <a-button class="btn-ghost" @click="closeProfileModal">暂不修改</a-button>
+            <a-button class="btn-dark" :disabled="isProfileLoading" @click="confirmProfileModal">确定修改</a-button>
+          </div>
+        </a-form>
       </div>
     </a-modal>
 
@@ -279,8 +173,8 @@
         </p>
         <div class="api-token-box">•••••••••••••••••••••••••••••••••••••••</div>
         <div class="mini-actions">
-          <button type="button" class="btn-ghost" @click="apiModalOpen = false">重置令牌</button>
-          <button type="button" class="btn-dark" @click="apiModalOpen = false">查看API文档</button>
+          <a-button class="btn-ghost" @click="apiModalOpen = false">重置令牌</a-button>
+          <a-button class="btn-dark" @click="apiModalOpen = false">查看API文档</a-button>
         </div>
       </div>
     </a-modal>
@@ -376,9 +270,10 @@
 <script setup lang="ts">
 import { createFromIconfontCN } from '@ant-design/icons-vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthLoginModal from '@/components/AuthLoginModal.vue'
+import PurchaseCreditsModal from './components/PurchaseCreditsModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import request from '@/utils/request'
 
@@ -432,6 +327,10 @@ const themeSubmenuOpen = ref(false)
 const feedbackText = ref('')
 const feedbackPhone = ref('')
 const isLoggingOut = ref(false)
+const creditsValue = ref<string | number | null>(null)
+const profileEmail = ref('')
+const profileUsernameDraft = ref('')
+const isProfileLoading = ref(false)
 let themeSubmenuTimer: ReturnType<typeof setTimeout> | null = null
 
 const messagePanelRef = ref<HTMLElement | null>(null)
@@ -448,6 +347,14 @@ const activeIcon = (item: { path: string; icon: string; activeIcon?: string }) =
   route.path === item.path && item.activeIcon ? item.activeIcon : item.icon
 
 const isLoggedIn = computed(() => authStore.isLoggedIn)
+const creditsDisplay = computed(() => {
+  if (creditsValue.value === null || creditsValue.value === undefined || creditsValue.value === '') return '--'
+  return String(creditsValue.value)
+})
+const displayUsername = computed(() => {
+  const next = String(authStore.user?.username || '').trim()
+  return next || '用户3529_2654'
+})
 
 const openInviteModal = () => {
   inviteModalOpen.value = true
@@ -465,6 +372,21 @@ const toggleMessagePanel = () => {
   messagePanelOpen.value = !messagePanelOpen.value
 }
 
+const performLogout = async () => {
+  if (isLoggingOut.value) return
+  isLoggingOut.value = true
+  try {
+    await request.post('/api/auth/logout')
+  } catch (_error) {
+    message.warning('服务端退出失败，已本地退出')
+  } finally {
+    authStore.clearAuth()
+    authStore.closeAuthModal()
+    await router.push('/explore')
+    isLoggingOut.value = false
+  }
+}
+
 const onMoreMenuAction = async (key: string) => {
   morePopoverOpen.value = false
   themeSubmenuOpen.value = false
@@ -475,20 +397,79 @@ const onMoreMenuAction = async (key: string) => {
     accountModalOpen.value = true
   }
   if (key === 'logout') {
-    if (isLoggingOut.value) return
-    isLoggingOut.value = true
-    try {
-      await request.post('/api/auth/logout')
-    } catch (_error) {
-      message.warning('服务端退出失败，已本地退出')
-    } finally {
-      authStore.clearAuth()
-      authStore.closeAuthModal()
-      await router.push('/explore')
-      isLoggingOut.value = false
-    }
+    Modal.confirm({
+      title: '退出后需重新登录，确认退出？',
+      okText: '确认退出',
+      cancelText: '取消',
+      centered: true,
+      onOk: async () => {
+        await performLogout()
+      },
+    })
     return
   }
+}
+
+interface UserInfoResponse {
+  id?: number
+  username?: string
+  email?: string
+  credits?: string | number | null
+}
+
+const loadUserInfo = async () => {
+  try {
+    const res = await request.get<unknown, UserInfoResponse>('/api/user/info')
+    if (!res || !Object.prototype.hasOwnProperty.call(res, 'credits')) {
+      creditsValue.value = null
+      return
+    }
+    creditsValue.value = res.credits ?? null
+  } catch (_error) {
+    creditsValue.value = null
+    console.warn('load /api/user/info failed')
+  }
+}
+
+const resetProfileDraft = () => {
+  profileEmail.value = ''
+  profileUsernameDraft.value = ''
+}
+
+const loadProfileForModal = async () => {
+  isProfileLoading.value = true
+  try {
+    const res = await request.get<unknown, UserInfoResponse>('/api/user/info')
+    profileEmail.value = String(res?.email || authStore.user?.email || '').trim()
+    profileUsernameDraft.value = String(res?.username || authStore.user?.username || '').trim()
+  } catch (_error) {
+    profileEmail.value = String(authStore.user?.email || '').trim()
+    profileUsernameDraft.value = String(authStore.user?.username || '').trim()
+    message.warning('用户信息加载失败，已展示本地信息')
+  } finally {
+    isProfileLoading.value = false
+  }
+}
+
+const closeProfileModal = () => {
+  avatarModalOpen.value = false
+  resetProfileDraft()
+  isProfileLoading.value = false
+}
+
+const confirmProfileModal = () => {
+  closeProfileModal()
+}
+
+const handleAvatarChangeClick = () => {
+  message.info('功能暂未开放')
+}
+
+const handleCreditsRedeemed = (payload: { balance?: string | number | null }) => {
+  if (payload.balance !== undefined) {
+    creditsValue.value = payload.balance ?? null
+  }
+  void loadUserInfo()
 }
 
 // const openThemeSubmenu = () => {
@@ -555,6 +536,27 @@ watch(
     }
   },
   { immediate: true },
+)
+
+watch(
+  isLoggedIn,
+  (loggedIn) => {
+    if (!loggedIn) {
+      creditsValue.value = null
+      return
+    }
+    void loadUserInfo()
+  },
+  { immediate: true },
+)
+
+watch(
+  avatarModalOpen,
+  (open) => {
+    if (open && isLoggedIn.value) {
+      void loadProfileForModal()
+    }
+  },
 )
 
 onBeforeUnmount(() => {
@@ -924,12 +926,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-:global(.sider-invite-modal .ant-modal-content) {
-  border-radius: 16px;
-  overflow: hidden;
-  padding: 14px 20px 18px;
-}
-
 :global(.sider-mini-modal .ant-modal-content) {
   border-radius: 16px;
   padding: 20px;
@@ -1215,295 +1211,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.invite-close {
-  right: 10px;
-  top: 10px;
-  color: rgba(0, 0, 0, 0.35);
-  font-size: 18px;
-}
-
-.invite-modal-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.invite-user-row {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  height: 36px;
-}
-
-.invite-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-}
-
-.invite-username {
-  color: rgba(0, 0, 0, 0.88);
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 36px;
-}
-
-.invite-summary-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr 1fr 1.45fr;
-}
-
-.summary-card {
-  border: 1px solid #ececef;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  min-height: 102px;
-  padding: 12px 14px;
-}
-
-.summary-head {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-}
-
-.summary-head-left {
-  color: rgba(0, 0, 0, 0.78);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.summary-head-link {
-  color: rgba(0, 0, 0, 0.45);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.summary-value {
-  color: rgba(0, 0, 0, 0.88);
-  font-size: 40px;
-  font-weight: 600;
-  line-height: 48px;
-  margin-top: 4px;
-}
-
-.summary-action {
-  align-self: flex-end;
-  background: linear-gradient(180deg, #333, #282828);
-  border: none;
-  border-radius: 8px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 13px;
-  height: 30px;
-  margin-top: auto;
-  width: 64px;
-}
-
-.summary-banner {
-  background: url('https://img.alicdn.com/imgextra/i2/O1CN01UYxv2x1hoNpkdA0as_!!6000000004326-2-tps-1056-376.png') center / cover no-repeat;
-  border-radius: 12px;
-  color: #111;
-  min-height: 102px;
-  padding: 14px 20px;
-}
-
-.summary-banner-title {
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  line-height: 58px;
-}
-
-.summary-banner-link {
-  color: rgba(0, 0, 0, 0.5);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.plan-title {
-  color: rgba(0, 0, 0, 0.88);
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 50px;
-  margin: 2px 0 0;
-  text-align: center;
-}
-
-.plan-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.plan-card {
-  border: 1px solid #efeff2;
-  border-radius: 12px;
-  min-height: 330px;
-  padding: 14px 14px 12px;
-}
-
-.plan-name-row {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-
-  h4 {
-    color: rgba(0, 0, 0, 0.88);
-    font-size: 30px;
-    font-weight: 600;
-    line-height: 38px;
-    margin: 0;
-  }
-}
-
-.plan-badge {
-  background: #efe7ff;
-  border-radius: 6px;
-  color: #7e52ea;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-  padding: 1px 6px;
-}
-
-.plan-desc {
-  color: rgba(0, 0, 0, 0.45);
-  font-size: 12px;
-  line-height: 18px;
-  margin: 3px 0 0;
-}
-
-.plan-price-row {
-  align-items: baseline;
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
-}
-
-.plan-price {
-  color: rgba(0, 0, 0, 0.88);
-  font-size: 44px;
-  font-weight: 600;
-  line-height: 52px;
-}
-
-.plan-unit {
-  color: rgba(0, 0, 0, 0.65);
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.plan-origin-price {
-  color: rgba(0, 0, 0, 0.25);
-  font-size: 12px;
-  line-height: 18px;
-  text-decoration: line-through;
-}
-
-.plan-extra {
-  color: rgba(0, 0, 0, 0.45);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.plan-buy-btn {
-  background: #f2f2f2;
-  border: none;
-  border-radius: 8px;
-  color: rgba(0, 0, 0, 0.25);
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  height: 36px;
-  margin-top: 8px;
-  width: 100%;
-
-  &.dark {
-    background: linear-gradient(180deg, #333, #282828);
-    color: #fff;
-  }
-}
-
-.plan-buy-btn:disabled {
-  cursor: default;
-}
-
-.plan-quota-card {
-  align-items: flex-start;
-  background: #f7f7fa;
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 8px;
-  padding: 8px 10px;
-
-  strong {
-    color: rgba(0, 0, 0, 0.88);
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 22px;
-  }
-
-  span {
-    color: rgba(0, 0, 0, 0.35);
-    font-size: 11px;
-    line-height: 16px;
-  }
-}
-
-.plan-rights-title {
-  color: rgba(0, 0, 0, 0.65);
-  font-size: 12px;
-  line-height: 18px;
-  margin-top: 8px;
-}
-
-.plan-rights {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-
-  li {
-    align-items: center;
-    color: rgba(0, 0, 0, 0.65);
-    display: flex;
-    font-size: 12px;
-    line-height: 18px;
-    position: relative;
-
-    &::before {
-      color: rgba(0, 0, 0, 0.45);
-      content: '✓';
-      font-size: 11px;
-      margin-right: 6px;
-    }
-  }
-}
-
-.limited-free-tag {
-  background: linear-gradient(90deg, #daff8f, #9ef4cf);
-  border-radius: 999px;
-  color: #2f3133;
-  font-size: 10px;
-  line-height: 16px;
-  margin-left: 6px;
-  padding: 0 6px;
-}
-
-.free-plan {
-  .plan-rights {
-    margin-top: 12px;
-  }
-}
-
 .mini-modal-content {
   padding-top: 8px;
 }
@@ -1516,18 +1223,27 @@ onBeforeUnmount(() => {
   margin-bottom: 14px;
 }
 
-.avatar-edit-header .invite-avatar {
+.avatar-edit-image {
   width: 56px;
   height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .avatar-change-btn {
   width: 64px;
   height: 28px;
   border-radius: 8px;
-  border: 1px solid #ececec;
+  border-color: #ececec;
   background: #fff;
   color: rgba(0, 0, 0, 0.65);
+  padding: 0;
+}
+
+:deep(.avatar-change-btn.ant-btn:hover),
+:deep(.avatar-change-btn.ant-btn:focus) {
+  border-color: #d9d9d9;
+  color: rgba(0, 0, 0, 0.78);
 }
 
 .mini-input-label {
@@ -1537,15 +1253,35 @@ onBeforeUnmount(() => {
   color: rgba(0, 0, 0, 0.88);
 }
 
+.mini-profile-form {
+  :deep(.ant-form-item) {
+    margin-bottom: 12px;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    font-size: 13px;
+    color: rgba(0, 0, 0, 0.88);
+  }
+}
+
 .mini-input {
-  width: 100%;
-  height: 34px;
-  border: 1px solid #ebebeb;
-  border-radius: 8px;
-  background: #fafafa;
-  padding: 0 12px;
-  font-size: 14px;
-  color: rgba(0, 0, 0, 0.65);
+  :deep(.ant-input) {
+    width: 100%;
+    height: 34px;
+    border: 1px solid #ebebeb;
+    border-radius: 8px;
+    background: #fafafa;
+    padding: 0 12px;
+    font-size: 14px;
+    color: rgba(0, 0, 0, 0.65);
+  }
+}
+
+.mini-input-readonly {
+  :deep(.ant-input) {
+    background: #fafafa;
+    color: rgba(0, 0, 0, 0.48);
+  }
 }
 
 .mini-tip {
@@ -1587,21 +1323,29 @@ onBeforeUnmount(() => {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 
-  button {
+  :deep(.ant-btn) {
     height: 36px;
     border-radius: 8px;
     font-size: 14px;
-    border: none;
+    padding: 0 10px;
   }
 
   .btn-ghost {
-    border: 1px solid #ececec;
+    border-color: #ececec;
     background: #fff;
     color: rgba(0, 0, 0, 0.65);
   }
 
   .btn-dark {
     background: #1f1f1f;
+    border-color: #1f1f1f;
+    color: #fff;
+  }
+
+  :deep(.btn-dark.ant-btn:hover),
+  :deep(.btn-dark.ant-btn:focus) {
+    background: #2a2a2a;
+    border-color: #2a2a2a;
     color: #fff;
   }
 }
