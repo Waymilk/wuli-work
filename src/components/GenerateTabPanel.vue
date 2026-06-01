@@ -21,40 +21,29 @@
 
     <div class="panel-body" :class="{'mini':showMini}">
       <div class="input-row">
-        <div class="upload-wrapper">
-        <AUpload
+        <ReferenceImageUpload
+          :key="referenceUploadRenderKey"
+          :is-video="isVideo"
           accept="image/*"
-          :max-count="1"
-          :show-upload-list="false"
-          :before-upload="beforeReferenceUpload"
-          v-model:file-list="uploadFileList"
-          @change="onReferenceUploadChange"
-        >
-          <div class="upload-btn" :class="{ 'has-image': !!referenceImagePreviewUrl }" :title="isVideo ? '上传首帧' : '上传参考图'">
-            <img
-              v-if="referenceImagePreviewUrl"
-              class="upload-preview"
-              :src="referenceImagePreviewUrl"
-              alt="上传预览"
-              @click.stop.prevent="onPreviewReferenceImage"
-            />
-            <span v-else class="upload-plus">+</span>
-            <span class="upload-tag" v-if="isVideo">首帧</span>
-
-            <button v-if="referenceImagePreviewUrl" class="upload-remove-btn" type="button" @click.stop.prevent="onRemoveReferenceImage">×</button>
-          </div>
-        </AUpload>
-        </div>
+          :max-count="3"
+          :disabled="isSubmitting"
+          @file-change="onReferenceFileChange"
+          @upload-result="onReferenceUploadResult"
+        />
 
         <div class="editor-wrap">
-          <textarea
-            ref="promptTextareaRef"
-            v-model="prompt"
-            :placeholder="placeholder"
-            rows="1"
-            @keydown.enter.exact.prevent="onGenerate"
-            @click="onTextareaFocus"
-          />
+          <div
+            ref="promptEditorRef"
+            class="prompt-editor"
+            :data-placeholder="placeholder"
+            contenteditable="true"
+            @input="onEditorInput"
+            @focus="onTextareaFocus"
+            @click="cacheEditorSelection"
+            @keyup="cacheEditorSelection"
+            @mouseup="cacheEditorSelection"
+            @keydown="onEditorKeydown"
+          ></div>
         </div>
       </div>
 
@@ -211,7 +200,6 @@
           </a-popover>
 
           <a-popover
-            v-if="isVideo"
             v-model:open="atOpen"
             trigger="click"
             placement="bottomLeft"
@@ -222,8 +210,19 @@
           >
             <template #content>
               <div class="at-popover-inner">
-                <IconFont type="icon-a-Outlined-" class="at-empty-icon" />
-                <div class="at-empty-text">暂无图片或视频</div>
+                <div v-if="mentionDatasets.length" class="at-list">
+                  <button
+                    v-for="item in mentionDatasets"
+                    :key="item.uid"
+                    type="button"
+                    class="at-list-item"
+                    @click="onSelectMention(item)"
+                  >
+                    <img class="at-list-thumb" :src="item.datasetUrl" :alt="item.label" />
+                    <span class="at-list-text">{{ item.label }}</span>
+                  </button>
+                </div>
+                <a-empty v-else description="暂无图片或视频" />
               </div>
             </template>
 
@@ -262,21 +261,19 @@
       </div>
     </div>
 
-    <a-modal v-model:open="previewModalOpen" :footer="null" width="560px" class="reference-preview-modal">
-      <img class="reference-preview-modal-image" :src="referenceImagePreviewUrl" alt="参考图预览" />
-    </a-modal>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Upload as AUpload, message } from 'ant-design-vue'
-import type { UploadProps } from 'ant-design-vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { message } from 'ant-design-vue'
 import { DownOutlined, createFromIconfontCN } from '@ant-design/icons-vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
 import creditsIcon from '@/assets/credits.svg'
 import { useModelsStore } from '@/stores/models'
+import ReferenceImageUpload from './ReferenceImageUpload.vue'
+
 import type {
   BackendModelConfig,
   BackendModelRecord,
@@ -342,6 +339,8 @@ interface ImageTaskPayload {
   aspect_ratio: string
   num_images: number
   image_size: string
+  reference_dataset_id?: string
+  reference_dataset_url?: string
 }
 
 interface VideoTaskPayload {
@@ -352,6 +351,8 @@ interface VideoTaskPayload {
   aspect_ratio?: string
   resolution?: string
   duration?: string
+  reference_dataset_id?: string
+  reference_dataset_url?: string
 }
 
 type TaskCreatePayload = ImageTaskPayload | VideoTaskPayload
@@ -377,6 +378,32 @@ interface TaskCreateResponse {
   status?: string
   error?: unknown
   detail?: string
+}
+
+interface UploadResultEventPayload {
+  uploading: boolean
+  success: boolean
+  datasetId?: string
+  datasetUrl?: string
+  datasets?: Array<{ uid: string; datasetId: string; datasetUrl: string }>
+  uploadingCount?: number
+  successCount?: number
+  error?: string
+}
+
+interface UploadFileChangeEventPayload {
+  file: File | null
+  files?: File[]
+  previewUrl?: string
+  displayUrls?: string[]
+  items?: Array<{ uid: string; status: 'uploading' | 'success' | 'error'; datasetId?: string; datasetUrl?: string; displayUrl: string; error?: string }>
+}
+
+interface MentionDatasetItem {
+  uid: string
+  datasetId: string
+  datasetUrl: string
+  label: string
 }
 
 interface TaskArtifact {
@@ -410,7 +437,10 @@ const VIDEO_MODEL_ICON = 'https://img.alicdn.com/imgextra/i2/O1CN01CHQQzM1otcX7x
 
 const mode = ref<ModeKey>('IMAGE')
 const prompt = ref('')
-const promptTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const promptEditorRef = ref<HTMLDivElement | null>(null)
+const mentionDatasets = ref<MentionDatasetItem[]>([])
+const selectedMentionIds = ref<string[]>([])
+let cachedSelection: Range | null = null
 
 const modelOpen = ref(false)
 const smartOpen = ref(false)
@@ -471,7 +501,10 @@ const hasSmartOptions = computed(() => ratioOptions.value.length > 0 || sizeOpti
 const smartLabelText = computed(() => ratioDisplayText(selectedRatio.value || 'auto'))
 const smartPillValues = computed(() => [selectedSize.value, countDisplayText(selectedCount.value)].filter((item) => Boolean(item)))
 const hasPrompt = computed(() => prompt.value.trim().length > 0)
-const canGenerate = computed(() => hasPrompt.value && Boolean(currentModel.value) && !isModelsLoading.value)
+const isReferenceUploading = ref(false)
+const uploadError = ref('')
+const uploadedDatasetId = ref('')
+const uploadedDatasetUrl = ref('')
 const generateCost = computed(() => currentModel.value?.costPerGeneration)
 const hasGenerateCost = computed(() => typeof generateCost.value === 'number')
 const showGenerateCost = computed(() => !isSubmitting.value && hasPrompt.value && Boolean(currentModel.value))
@@ -485,9 +518,19 @@ const generateCostText = computed(() => {
   return String(generateCost.value)
 })
 const referenceImageFile = ref<File | null>(null)
-const uploadFileList = ref<NonNullable<UploadProps['fileList']>>([])
-const referenceImagePreviewUrl = ref('')
-const previewModalOpen = ref(false)
+const referenceUploadRenderKey = ref(0)
+const hasReferenceDataset = computed(() => Boolean(uploadedDatasetId.value && uploadedDatasetUrl.value))
+const needsReferenceForCurrentTask = computed(() => {
+  if (isVideo.value) return videoModelTab.value === 'img2video'
+  return Boolean(referenceImageFile.value)
+})
+const canGenerate = computed(() => (
+  hasPrompt.value
+  && Boolean(currentModel.value)
+  && !isModelsLoading.value
+  && !isReferenceUploading.value
+  && (!needsReferenceForCurrentTask.value || hasReferenceDataset.value)
+))
 const isSubmitting = ref(false)
 const isPolling = ref(false)
 const currentTaskId = ref<string | null>(null)
@@ -498,66 +541,217 @@ function getPopupContainer(trigger: HTMLElement): HTMLElement {
   return trigger.parentElement || document.body
 }
 
-const beforeReferenceUpload: UploadProps['beforeUpload'] = () => false
+function clearUploadedDataset() {
+  isReferenceUploading.value = false
+  uploadError.value = ''
+  uploadedDatasetId.value = ''
+  uploadedDatasetUrl.value = ''
+}
 
-const onReferenceUploadChange: UploadProps['onChange'] = (info) => {
-  const nextList = info.fileList.slice(-1)
-  uploadFileList.value = nextList
-  const nextFile = nextList[0]?.originFileObj as File | undefined
-  if (!nextFile) {
-    onRemoveReferenceImage()
+function updateSelectedMentionIds() {
+  const root = promptEditorRef.value
+  if (!root) {
+    selectedMentionIds.value = []
     return
   }
-  referenceImageFile.value = nextFile
-  setReferencePreview(nextFile)
+  const ids = Array.from(root.querySelectorAll<HTMLElement>('.prompt-mention-token[data-dataset-id]'))
+    .map((node) => node.dataset.datasetId || '')
+    .filter(Boolean)
+  selectedMentionIds.value = Array.from(new Set(ids))
 }
 
-function onPreviewReferenceImage() {
-  if (!referenceImagePreviewUrl.value) return
-  previewModalOpen.value = true
+function serializePromptFromEditor() {
+  const root = promptEditorRef.value
+  if (!root) return prompt.value.trim()
+  const clone = root.cloneNode(true) as HTMLDivElement
+  clone.querySelectorAll<HTMLElement>('.prompt-mention-token').forEach((token) => {
+    const datasetId = token.dataset.datasetId || ''
+    const textNode = document.createTextNode(datasetId ? `{${datasetId}}` : '')
+    token.replaceWith(textNode)
+  })
+  const raw = clone.innerText || clone.textContent || ''
+  return raw
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
-function onRemoveReferenceImage() {
-  referenceImageFile.value = null
-  uploadFileList.value = []
-  previewModalOpen.value = false
-  clearReferencePreview()
+function syncPromptFromEditor() {
+  const root = promptEditorRef.value
+  if (root) {
+    const hasToken = root.querySelector('.prompt-mention-token')
+    if (!hasToken && !root.textContent?.trim()) {
+      root.innerHTML = ''
+    }
+  }
+  prompt.value = serializePromptFromEditor()
+  updateSelectedMentionIds()
 }
 
-function clearReferencePreview() {
-  if (referenceImagePreviewUrl.value) {
-    URL.revokeObjectURL(referenceImagePreviewUrl.value)
-    referenceImagePreviewUrl.value = ''
+function cacheEditorSelection() {
+  const root = promptEditorRef.value
+  if (!root) return
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return
+  cachedSelection = range.cloneRange()
+}
+
+function restoreSelectionOrMoveToEnd() {
+  const root = promptEditorRef.value
+  if (!root) return
+  const selection = window.getSelection()
+  if (!selection) return
+
+  if (cachedSelection) {
+    try {
+      selection.removeAllRanges()
+      selection.addRange(cachedSelection)
+      return
+    } catch {
+      cachedSelection = null
+    }
+  }
+
+  const range = document.createRange()
+  range.selectNodeContents(root)
+  range.collapse(false)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  cachedSelection = range.cloneRange()
+}
+
+function createMentionTokenNode(item: MentionDatasetItem) {
+  const token = document.createElement('span')
+  token.className = 'prompt-mention-token'
+  token.contentEditable = 'false'
+  token.dataset.datasetId = item.datasetId
+  token.dataset.uid = item.uid
+
+  const img = document.createElement('img')
+  img.className = 'prompt-mention-thumb'
+  img.src = item.datasetUrl
+  img.alt = item.label
+  token.appendChild(img)
+
+  const text = document.createElement('span')
+  text.className = 'prompt-mention-label'
+  text.textContent = item.label
+  token.appendChild(text)
+  return token
+}
+
+function pruneMissingMentionTokens(validDatasetIds: Set<string>) {
+  const root = promptEditorRef.value
+  if (!root) return
+  root.querySelectorAll<HTMLElement>('.prompt-mention-token').forEach((token) => {
+    const datasetId = token.dataset.datasetId || ''
+    if (datasetId && !validDatasetIds.has(datasetId)) {
+      token.remove()
+    }
+  })
+}
+
+function onEditorInput() {
+  syncPromptFromEditor()
+  cacheEditorSelection()
+}
+
+function onEditorKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    void onGenerate()
+    return
+  }
+  requestAnimationFrame(() => {
+    syncPromptFromEditor()
+    cacheEditorSelection()
+  })
+}
+
+function onReferenceFileChange(payload: UploadFileChangeEventPayload) {
+  const firstFile = payload.files?.[0] || payload.file
+  referenceImageFile.value = firstFile || null
+  if (!firstFile) {
+    clearUploadedDataset()
+    mentionDatasets.value = []
+    pruneMissingMentionTokens(new Set())
+    syncPromptFromEditor()
   }
 }
 
-function setReferencePreview(file: File) {
-  clearReferencePreview()
-  referenceImagePreviewUrl.value = URL.createObjectURL(file)
+function onReferenceUploadResult(payload: UploadResultEventPayload) {
+  isReferenceUploading.value = payload.uploading
+  const firstDataset = payload.datasets?.[0]
+  const nextMentionList: MentionDatasetItem[] = (payload.datasets || []).map((item, index) => ({
+    uid: item.uid,
+    datasetId: item.datasetId,
+    datasetUrl: item.datasetUrl,
+    label: `图片${index + 1}`,
+  }))
+  mentionDatasets.value = nextMentionList
+  pruneMissingMentionTokens(new Set(nextMentionList.map((item) => item.datasetId)))
+  syncPromptFromEditor()
+  if (payload.uploading) {
+    uploadError.value = ''
+    uploadedDatasetId.value = ''
+    uploadedDatasetUrl.value = ''
+    return
+  }
+  if (payload.success && (firstDataset || (payload.datasetId && payload.datasetUrl))) {
+    uploadError.value = ''
+    uploadedDatasetId.value = firstDataset?.datasetId || payload.datasetId || ''
+    uploadedDatasetUrl.value = firstDataset?.datasetUrl || payload.datasetUrl || ''
+    return
+  }
+  uploadError.value = payload.error || ''
+  uploadedDatasetId.value = ''
+  uploadedDatasetUrl.value = ''
+}
+
+function onSelectMention(item: MentionDatasetItem) {
+  const root = promptEditorRef.value
+  if (!root) return
+  root.focus()
+  restoreSelectionOrMoveToEnd()
+
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  const token = createMentionTokenNode(item)
+  const trailingSpace = document.createTextNode(' ')
+
+  range.deleteContents()
+  range.insertNode(trailingSpace)
+  range.insertNode(token)
+
+  const nextRange = document.createRange()
+  nextRange.setStartAfter(trailingSpace)
+  nextRange.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(nextRange)
+  cachedSelection = nextRange.cloneRange()
+  atOpen.value = false
+  syncPromptFromEditor()
 }
 
 function resetComposerInputs() {
   prompt.value = ''
-  onRemoveReferenceImage()
-}
-
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
+  referenceImageFile.value = null
+  referenceUploadRenderKey.value += 1
+  mentionDatasets.value = []
+  selectedMentionIds.value = []
+  cachedSelection = null
+  const root = promptEditorRef.value
+  if (root) root.innerHTML = ''
+  clearUploadedDataset()
 }
 
 async function buildInputImagesForEmit() {
-  if (!referenceImageFile.value) return [] as string[]
-  try {
-    const dataUrl = await readFileAsDataUrl(referenceImageFile.value)
-    return dataUrl ? [dataUrl] : []
-  } catch {
-    return []
-  }
+  return mentionDatasets.value.map((item) => item.datasetUrl).filter(Boolean)
 }
 
 function slugifyName(name: string) {
@@ -1065,18 +1259,6 @@ function buildVideoTaskPayload(): VideoTaskPayload | null {
   return payload
 }
 
-function appendTaskPayloadToFormData(formData: FormData, payload: TaskCreatePayload) {
-  formData.append('prompt', payload.prompt)
-  formData.append('model_id', String(payload.model_id))
-  formData.append('task_type', payload.task_type)
-  formData.append('model_name', payload.model_name)
-  for (const [key, value] of Object.entries(payload)) {
-    if (key === 'prompt' || key === 'model_id' || key === 'task_type' || key === 'model_name') continue
-    if (value === undefined || value === null || value === '') continue
-    formData.append(key, String(value))
-  }
-}
-
 function ratioIconType(ratio: string) {
   const imageMap: Record<string, string> = {
     auto: 'icon-zhinengbili',
@@ -1155,10 +1337,10 @@ function onPopoverChange(name: PopoverName, open: boolean) {
 }
 
 function onModeChange(next: string | number) {
-  console.log('切换模式', next)
   clearPollingTask()
   const resolved = next === 'VIDEO' ? 'VIDEO' : 'IMAGE'
   if (mode.value === resolved) return
+
   mode.value = resolved
   closeAll()
   ensureCurrentModelAvailable()
@@ -1188,6 +1370,7 @@ function selectModel(modelItem: ModelItem) {
 }
 
 async function onGenerate() {
+  syncPromptFromEditor()
   if (!authStore.isLoggedIn) {
     authStore.openAuthModal()
     return
@@ -1216,7 +1399,7 @@ async function onGenerate() {
   try {
     clearPollingTask()
     let createRes: TaskCreateResponse
-    const shouldUseImageEndpoint = !isVideoTask
+    const shouldAttachReference = !isVideoTask
       ? Boolean(referenceImageFile.value)
       : videoModelTab.value === 'img2video'
 
@@ -1224,14 +1407,17 @@ async function onGenerate() {
       throw new Error('请先上传首帧')
     }
 
-    if (shouldUseImageEndpoint && referenceImageFile.value) {
-      const formData = new FormData()
-      appendTaskPayloadToFormData(formData, payload)
-      formData.append('image', referenceImageFile.value)
-      createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks/with-image', formData)
-    } else {
-      createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload)
+    if (shouldAttachReference) {
+      if (isReferenceUploading.value) {
+        throw new Error('参考图上传中，请稍候再试')
+      }
+      if (!uploadedDatasetId.value || !uploadedDatasetUrl.value) {
+        throw new Error(uploadError.value || '请先完成参考图上传')
+      }
+      payload.reference_dataset_id = uploadedDatasetId.value
+      payload.reference_dataset_url = uploadedDatasetUrl.value
     }
+    createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload)
 
     if (!createRes?.success || !createRes?.task_id) {
       throw new Error(getErrorMessage(createRes, '创建任务失败'))
@@ -1280,12 +1466,24 @@ function onTextareaFocus() {
 }
 
 function setPrompt(value: string) {
-  prompt.value = String(value || '')
+  const text = String(value || '')
+  prompt.value = text
   onTextareaFocus()
   requestAnimationFrame(() => {
-    promptTextareaRef.value?.focus()
-    const length = prompt.value.length
-    promptTextareaRef.value?.setSelectionRange(length, length)
+    const root = promptEditorRef.value
+    if (!root) return
+    root.textContent = text
+    root.focus()
+    const range = document.createRange()
+    range.selectNodeContents(root)
+    range.collapse(false)
+    const selection = window.getSelection()
+    if (selection) {
+      selection.removeAllRanges()
+      selection.addRange(range)
+      cachedSelection = range.cloneRange()
+    }
+    syncPromptFromEditor()
   })
 }
 
@@ -1295,11 +1493,16 @@ defineExpose({
 
 onMounted(() => {
   void loadModelsFromApi()
+  nextTick(() => {
+    const root = promptEditorRef.value
+    if (!root) return
+    root.textContent = prompt.value
+    syncPromptFromEditor()
+  })
 })
 
 onBeforeUnmount(() => {
   clearPollingTask()
-  clearReferencePreview()
 })
 </script>
 
@@ -1436,7 +1639,7 @@ onBeforeUnmount(() => {
       .editor-wrap{
         flex:1;
         padding:0;
-        textarea{
+        .prompt-editor{
           min-height: 50px;
           line-height: 50px;
         }
@@ -1554,23 +1757,26 @@ onBeforeUnmount(() => {
     max-height: 140px;
     padding: 4px 0 12px;
 
-    textarea {
+    .prompt-editor {
       width: 100%;
       min-height: 92px;
       max-height: 126px;
       padding: 0;
       border: none;
       outline: none;
-      resize: none;
       background: transparent;
       color: rgba(0, 0, 0, 0.88);
       font-family: 'PingFang SC', sans-serif;
       font-size: 14px;
       line-height: 1.5;
       overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
 
-      &::placeholder {
+      &:empty::before {
+        content: attr(data-placeholder);
         color: rgba(0, 0, 0, 0.25);
+        pointer-events: none;
       }
 
       &::-webkit-scrollbar {
@@ -1580,6 +1786,34 @@ onBeforeUnmount(() => {
       &::-webkit-scrollbar-thumb {
         border-radius: 4px;
         background: #e8e7ea;
+      }
+
+      :deep(.prompt-mention-token) {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        border-radius: 8px;
+        background: #f5efff;
+        padding: 0 8px 0 4px;
+        margin: 0 4px 0 0;
+        vertical-align: middle;
+        cursor: pointer;
+      }
+
+      :deep(.prompt-mention-thumb) {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+
+      :deep(.prompt-mention-label) {
+        font-size: 13px;
+        color: #8b52ff;
+        line-height: 18px;
+        font-weight: 500;
       }
     }
   }
@@ -2111,27 +2345,60 @@ onBeforeUnmount(() => {
     height: 26px;
   }
 }
-
+:deep(.ant-popover-inner){
+  padding:6px;
+}
 .at-popover-inner {
   background: #fff;
-  width: 92px;
-  height: 112px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  gap: 6px;
+  font-size: 12px;
 
-  .at-empty-icon {
-    font-size: 28px;
-    color: rgba(0, 0, 0, 0.35);
+  .at-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
-  .at-empty-text {
-    font-size: 14px;
-    line-height: 16px;
-    color: rgba(0, 0, 0, 0.45);
+  .at-list-item {
+    width: 100%;
+    height: 40px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    text-align: left;
+
+    &:hover,
+    &.selected {
+      background: #f3f3f5;
+    }
+  }
+
+  .at-list-thumb {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .at-list-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+    color: rgba(0, 0, 0, 0.88);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
   }
 }
 

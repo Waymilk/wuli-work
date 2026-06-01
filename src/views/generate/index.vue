@@ -102,7 +102,7 @@
                   <div v-else class="grid-item-content pending-grid-content">
                     <ASkeletonImage class="pending-skeleton-image" :active="item.status !== 'FAILED' && item.status !== 'CANCELLED'" />
                     <div class="pending-title">{{ pendingTitle(item) }}</div>
-                    <div class="pending-subtitle">{{ pendingSubtitle(item) }}</div>
+                    <!-- <div class="pending-subtitle">{{ pendingSubtitle(item) }}</div> -->
                     <div v-if="pendingProgress(item)" class="pending-progress">{{ pendingProgress(item) }}</div>
                     <ASpin v-if="item.status !== 'FAILED' && item.status !== 'CANCELLED'" size="small" />
                   </div>
