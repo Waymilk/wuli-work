@@ -339,8 +339,7 @@ interface ImageTaskPayload {
   aspect_ratio: string
   num_images: number
   image_size: string
-  reference_dataset_id?: string
-  reference_dataset_url?: string
+  image_ids?: number[]
 }
 
 interface VideoTaskPayload {
@@ -351,8 +350,7 @@ interface VideoTaskPayload {
   aspect_ratio?: string
   resolution?: string
   duration?: string
-  reference_dataset_id?: string
-  reference_dataset_url?: string
+  image_ids?: number[]
 }
 
 type TaskCreatePayload = ImageTaskPayload | VideoTaskPayload
@@ -369,6 +367,7 @@ interface TaskCreatedEventPayload {
     countLabel: string
   }
   inputImages?: string[]
+  promptDatasets?: Array<{ datasetId: string; datasetUrl: string; label: string }>
   expectedCount: number
 }
 
@@ -383,9 +382,11 @@ interface TaskCreateResponse {
 interface UploadResultEventPayload {
   uploading: boolean
   success: boolean
+  imageId?: number
+  imageUrl?: string
   datasetId?: string
   datasetUrl?: string
-  datasets?: Array<{ uid: string; datasetId: string; datasetUrl: string }>
+  datasets?: Array<{ uid: string; imageId?: number; imageUrl?: string; datasetId: string; datasetUrl: string }>
   uploadingCount?: number
   successCount?: number
   error?: string
@@ -396,11 +397,13 @@ interface UploadFileChangeEventPayload {
   files?: File[]
   previewUrl?: string
   displayUrls?: string[]
-  items?: Array<{ uid: string; status: 'uploading' | 'success' | 'error'; datasetId?: string; datasetUrl?: string; displayUrl: string; error?: string }>
+  items?: Array<{ uid: string; status: 'uploading' | 'success' | 'error'; imageId?: number; imageUrl?: string; datasetId?: string; datasetUrl?: string; displayUrl: string; error?: string }>
 }
 
 interface MentionDatasetItem {
   uid: string
+  imageId: number
+  imageUrl: string
   datasetId: string
   datasetUrl: string
   label: string
@@ -503,8 +506,7 @@ const smartPillValues = computed(() => [selectedSize.value, countDisplayText(sel
 const hasPrompt = computed(() => prompt.value.trim().length > 0)
 const isReferenceUploading = ref(false)
 const uploadError = ref('')
-const uploadedDatasetId = ref('')
-const uploadedDatasetUrl = ref('')
+const uploadedImageIds = ref<number[]>([])
 const generateCost = computed(() => currentModel.value?.costPerGeneration)
 const hasGenerateCost = computed(() => typeof generateCost.value === 'number')
 const showGenerateCost = computed(() => !isSubmitting.value && hasPrompt.value && Boolean(currentModel.value))
@@ -519,7 +521,7 @@ const generateCostText = computed(() => {
 })
 const referenceImageFile = ref<File | null>(null)
 const referenceUploadRenderKey = ref(0)
-const hasReferenceDataset = computed(() => Boolean(uploadedDatasetId.value && uploadedDatasetUrl.value))
+const hasReferenceImages = computed(() => uploadedImageIds.value.length > 0)
 const needsReferenceForCurrentTask = computed(() => {
   if (isVideo.value) return videoModelTab.value === 'img2video'
   return Boolean(referenceImageFile.value)
@@ -529,7 +531,7 @@ const canGenerate = computed(() => (
   && Boolean(currentModel.value)
   && !isModelsLoading.value
   && !isReferenceUploading.value
-  && (!needsReferenceForCurrentTask.value || hasReferenceDataset.value)
+  && (!needsReferenceForCurrentTask.value || hasReferenceImages.value)
 ))
 const isSubmitting = ref(false)
 const isPolling = ref(false)
@@ -541,11 +543,10 @@ function getPopupContainer(trigger: HTMLElement): HTMLElement {
   return trigger.parentElement || document.body
 }
 
-function clearUploadedDataset() {
+function clearUploadedImages() {
   isReferenceUploading.value = false
   uploadError.value = ''
-  uploadedDatasetId.value = ''
-  uploadedDatasetUrl.value = ''
+  uploadedImageIds.value = []
 }
 
 function updateSelectedMentionIds() {
@@ -676,7 +677,7 @@ function onReferenceFileChange(payload: UploadFileChangeEventPayload) {
   const firstFile = payload.files?.[0] || payload.file
   referenceImageFile.value = firstFile || null
   if (!firstFile) {
-    clearUploadedDataset()
+    clearUploadedImages()
     mentionDatasets.value = []
     pruneMissingMentionTokens(new Set())
     syncPromptFromEditor()
@@ -685,9 +686,11 @@ function onReferenceFileChange(payload: UploadFileChangeEventPayload) {
 
 function onReferenceUploadResult(payload: UploadResultEventPayload) {
   isReferenceUploading.value = payload.uploading
-  const firstDataset = payload.datasets?.[0]
-  const nextMentionList: MentionDatasetItem[] = (payload.datasets || []).map((item, index) => ({
+  const uploadedImages = (payload.datasets || []).filter((item) => item.imageId && item.imageUrl)
+  const nextMentionList: MentionDatasetItem[] = uploadedImages.map((item, index) => ({
     uid: item.uid,
+    imageId: item.imageId || 0,
+    imageUrl: item.imageUrl || '',
     datasetId: item.datasetId,
     datasetUrl: item.datasetUrl,
     label: `图片${index + 1}`,
@@ -697,19 +700,18 @@ function onReferenceUploadResult(payload: UploadResultEventPayload) {
   syncPromptFromEditor()
   if (payload.uploading) {
     uploadError.value = ''
-    uploadedDatasetId.value = ''
-    uploadedDatasetUrl.value = ''
+    uploadedImageIds.value = []
     return
   }
-  if (payload.success && (firstDataset || (payload.datasetId && payload.datasetUrl))) {
+  if (uploadedImages.length) {
     uploadError.value = ''
-    uploadedDatasetId.value = firstDataset?.datasetId || payload.datasetId || ''
-    uploadedDatasetUrl.value = firstDataset?.datasetUrl || payload.datasetUrl || ''
+    uploadedImageIds.value = uploadedImages
+      .map((item) => Number(item.imageId))
+      .filter((imageId) => Number.isFinite(imageId) && imageId > 0)
     return
   }
   uploadError.value = payload.error || ''
-  uploadedDatasetId.value = ''
-  uploadedDatasetUrl.value = ''
+  uploadedImageIds.value = []
 }
 
 function onSelectMention(item: MentionDatasetItem) {
@@ -747,11 +749,19 @@ function resetComposerInputs() {
   cachedSelection = null
   const root = promptEditorRef.value
   if (root) root.innerHTML = ''
-  clearUploadedDataset()
+  clearUploadedImages()
 }
 
 async function buildInputImagesForEmit() {
   return mentionDatasets.value.map((item) => item.datasetUrl).filter(Boolean)
+}
+
+function buildPromptDatasetsForEmit() {
+  return mentionDatasets.value.map((item) => ({
+    datasetId: item.datasetId,
+    datasetUrl: item.datasetUrl,
+    label: item.label,
+  }))
 }
 
 function slugifyName(name: string) {
@@ -1411,11 +1421,10 @@ async function onGenerate() {
       if (isReferenceUploading.value) {
         throw new Error('参考图上传中，请稍候再试')
       }
-      if (!uploadedDatasetId.value || !uploadedDatasetUrl.value) {
+      if (!uploadedImageIds.value.length) {
         throw new Error(uploadError.value || '请先完成参考图上传')
       }
-      payload.reference_dataset_id = uploadedDatasetId.value
-      payload.reference_dataset_url = uploadedDatasetUrl.value
+      payload.image_ids = [...uploadedImageIds.value]
     }
     createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload)
 
@@ -1440,6 +1449,7 @@ async function onGenerate() {
         countLabel,
       },
       inputImages: await buildInputImagesForEmit(),
+      promptDatasets: buildPromptDatasetsForEmit(),
       expectedCount: isVideoTask ? 1 : normalizeNumImages(selectedCount.value),
     }
     emit('task-created', taskCreatedPayload)

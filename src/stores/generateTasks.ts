@@ -12,10 +12,17 @@ export interface GenerateTaskDisplayMeta {
   countLabel: string
 }
 
+export interface GeneratePromptDataset {
+  datasetId: string
+  datasetUrl: string
+  label: string
+}
+
 export interface GenerateTaskCreatedPayload {
   taskId: string
   displayMeta: GenerateTaskDisplayMeta
   inputImages?: string[]
+  promptDatasets?: GeneratePromptDataset[]
   expectedCount?: number
   mediaType?: 'IMAGE' | 'VIDEO'
 }
@@ -55,6 +62,11 @@ interface HistoryParameters {
   resolution?: string
   duration?: number | string
   model_name?: string
+  reference_dataset_id?: unknown
+  reference_dataset_ids?: unknown
+  reference_dataset_url?: unknown
+  reference_dataset_urls?: unknown
+  reference_datasets?: unknown
 }
 
 interface HistoryItemResponse {
@@ -70,6 +82,7 @@ interface HistoryItemResponse {
   is_favorite?: boolean
   replicate_id?: string | null
   created_at?: string
+  reference_images?: unknown
 }
 
 interface HistoryListResponse {
@@ -93,6 +106,7 @@ export interface GenerateHistoryItem {
   countLabel: string
   expectedCount: number
   inputImages: string[]
+  promptDatasets: GeneratePromptDataset[]
   resultImages: string[]
   isFavorite: boolean
   progress?: number
@@ -183,6 +197,93 @@ function normalizeResultUrls(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
 }
 
+function normalizeReferenceImageUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((rawItem) => {
+      if (!rawItem || typeof rawItem !== 'object') return ''
+      const item = rawItem as { url?: unknown }
+      return typeof item.url === 'string' ? item.url.trim() : ''
+    })
+    .filter((url): url is string => Boolean(url))
+}
+
+function normalizeReferenceImageDatasets(value: unknown): GeneratePromptDataset[] {
+  if (!Array.isArray(value)) return []
+  const datasets: GeneratePromptDataset[] = []
+  for (const rawItem of value) {
+    if (!rawItem || typeof rawItem !== 'object') continue
+    const item = rawItem as { id?: unknown; url?: unknown }
+    const datasetId = String(item.id ?? '').trim()
+    const datasetUrl = typeof item.url === 'string' ? item.url.trim() : ''
+    if (!datasetId || !datasetUrl) continue
+    datasets.push({
+      datasetId,
+      datasetUrl,
+      label: `图片${datasets.length + 1}`,
+    })
+  }
+  return datasets
+}
+
+function normalizeUnknownStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? '').trim())
+      .filter(Boolean)
+  }
+  const normalized = String(value ?? '').trim()
+  return normalized ? [normalized] : []
+}
+
+function normalizeLegacyReferenceDatasets(params: HistoryParameters): GeneratePromptDataset[] {
+  const datasets: GeneratePromptDataset[] = []
+  if (Array.isArray(params.reference_datasets)) {
+    for (const rawItem of params.reference_datasets) {
+      if (!rawItem || typeof rawItem !== 'object') continue
+      const item = rawItem as {
+        dataset_id?: unknown
+        datasetId?: unknown
+        id?: unknown
+        dataset_url?: unknown
+        datasetUrl?: unknown
+        url?: unknown
+      }
+      const datasetId = String(item.dataset_id ?? item.datasetId ?? item.id ?? '').trim()
+      const datasetUrl = String(item.dataset_url ?? item.datasetUrl ?? item.url ?? '').trim()
+      if (!datasetId || !datasetUrl) continue
+      datasets.push({ datasetId, datasetUrl, label: `图片${datasets.length + 1}` })
+    }
+  }
+
+  const ids = normalizeUnknownStringList(params.reference_dataset_ids ?? params.reference_dataset_id)
+  const urls = normalizeUnknownStringList(params.reference_dataset_urls ?? params.reference_dataset_url)
+  const count = Math.min(ids.length, urls.length)
+  for (let index = 0; index < count; index += 1) {
+    datasets.push({
+      datasetId: ids[index],
+      datasetUrl: urls[index],
+      label: `图片${datasets.length + 1}`,
+    })
+  }
+  return datasets
+}
+
+function dedupePromptDatasets(datasets: GeneratePromptDataset[]): GeneratePromptDataset[] {
+  const seen = new Set<string>()
+  const result: GeneratePromptDataset[] = []
+  for (const item of datasets) {
+    const key = `${item.datasetId}::${item.datasetUrl}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push({
+      ...item,
+      label: `图片${result.length + 1}`,
+    })
+  }
+  return result
+}
+
 function mapHistoryItemToStoreItem(item: HistoryItemResponse): GenerateHistoryItem {
   const params = item.parameters || {}
   const ratio = String(params.aspect_ratio || '').trim() || '智能匹配'
@@ -198,6 +299,13 @@ function mapHistoryItemToStoreItem(item: HistoryItemResponse): GenerateHistoryIt
     : (numImages ? `${numImages}张` : '-')
   const taskId = String(item.replicate_id || '').trim() || `history-${item.id}`
   const resultImages = normalizeResultUrls(item.result_urls)
+  const promptDatasets = dedupePromptDatasets([
+    ...normalizeReferenceImageDatasets(item.reference_images),
+    ...normalizeLegacyReferenceDatasets(params),
+  ])
+  const inputImages = promptDatasets.length
+    ? promptDatasets.map((dataset) => dataset.datasetUrl)
+    : normalizeReferenceImageUrls(item.reference_images)
   return {
     taskId,
     historyId: item.id,
@@ -211,7 +319,8 @@ function mapHistoryItemToStoreItem(item: HistoryItemResponse): GenerateHistoryIt
     sizeLabel,
     countLabel,
     expectedCount: Math.max(1, numImages || resultImages.length || 1),
-    inputImages: [],
+    inputImages,
+    promptDatasets,
     resultImages,
     isFavorite: Boolean(item.is_favorite),
     progress: undefined,
@@ -355,6 +464,7 @@ export const useGenerateTasksStore = defineStore('generateTasks', () => {
       countLabel: payload.displayMeta.countLabel,
       expectedCount: Math.max(1, payload.expectedCount || parseExpectedCount(payload.displayMeta.countLabel)),
       inputImages: payload.inputImages || [],
+      promptDatasets: payload.promptDatasets || [],
       resultImages: [],
       isFavorite: false,
       progress: 0,

@@ -11,7 +11,7 @@
         <img
           class="upload-preview"
           :class="{ blurred: item.status === 'uploading' }"
-          :src="item.datasetUrl || item.localPreviewUrl"
+          :src="item.imageUrl || item.datasetUrl || item.localPreviewUrl"
           alt="上传预览"
           @click.stop.prevent="onPreviewImage(item)"
         />
@@ -66,6 +66,8 @@ interface UploadListItem {
   uid: string
   file: File
   localPreviewUrl: string
+  imageId: number
+  imageUrl: string
   datasetId: string
   datasetUrl: string
   status: UploadItemStatus
@@ -74,8 +76,10 @@ interface UploadListItem {
 
 interface UploadResponse {
   success?: boolean
-  dataset_id?: string
-  dataset_url?: string
+  image?: {
+    id?: number | string
+    url?: string
+  }
   detail?: string
   error?: unknown
 }
@@ -83,6 +87,8 @@ interface UploadResponse {
 interface FileChangeItemPayload {
   uid: string
   status: UploadItemStatus
+  imageId?: number
+  imageUrl?: string
   datasetId?: string
   datasetUrl?: string
   displayUrl: string
@@ -100,6 +106,8 @@ interface FileChangePayload {
 
 interface UploadDatasetPayload {
   uid: string
+  imageId: number
+  imageUrl: string
   datasetId: string
   datasetUrl: string
 }
@@ -107,6 +115,8 @@ interface UploadDatasetPayload {
 interface UploadResultPayload {
   uploading: boolean
   success: boolean
+  imageId?: number
+  imageUrl?: string
   datasetId?: string
   datasetUrl?: string
   datasets: UploadDatasetPayload[]
@@ -200,18 +210,26 @@ function clearAll() {
 
 function emitAllStates(lastSuccess: boolean, error?: string) {
   const files = items.value.map((item) => item.file)
-  const displayUrls = items.value.map((item) => item.datasetUrl || item.localPreviewUrl)
+  const displayUrls = items.value.map((item) => item.imageUrl || item.datasetUrl || item.localPreviewUrl)
   const payloadItems: FileChangeItemPayload[] = items.value.map((item) => ({
     uid: item.uid,
     status: item.status,
+    imageId: item.imageId || undefined,
+    imageUrl: item.imageUrl || undefined,
     datasetId: item.datasetId || undefined,
     datasetUrl: item.datasetUrl || undefined,
-    displayUrl: item.datasetUrl || item.localPreviewUrl,
+    displayUrl: item.imageUrl || item.datasetUrl || item.localPreviewUrl,
     error: item.error || undefined,
   }))
   const datasets: UploadDatasetPayload[] = items.value
-    .filter((item) => item.status === 'success' && item.datasetId && item.datasetUrl)
-    .map((item) => ({ uid: item.uid, datasetId: item.datasetId, datasetUrl: item.datasetUrl }))
+    .filter((item) => item.status === 'success' && item.imageId && item.imageUrl)
+    .map((item) => ({
+      uid: item.uid,
+      imageId: item.imageId,
+      imageUrl: item.imageUrl,
+      datasetId: item.datasetId,
+      datasetUrl: item.datasetUrl,
+    }))
 
   emit('file-change', {
     file: files[0] || null,
@@ -225,6 +243,8 @@ function emitAllStates(lastSuccess: boolean, error?: string) {
   emit('upload-result', {
     uploading: uploadingCount.value > 0,
     success: lastSuccess,
+    imageId: datasets[0]?.imageId,
+    imageUrl: datasets[0]?.imageUrl,
     datasetId: datasets[0]?.datasetId,
     datasetUrl: datasets[0]?.datasetUrl,
     datasets,
@@ -240,6 +260,8 @@ function addLocalItem(file: File, uid: string) {
     uid,
     file,
     localPreviewUrl,
+    imageId: 0,
+    imageUrl: '',
     datasetId: '',
     datasetUrl: '',
     status: 'uploading',
@@ -258,6 +280,8 @@ async function uploadFileByUid(uid: string) {
 
   target.status = 'uploading'
   target.error = ''
+  target.imageId = 0
+  target.imageUrl = ''
   target.datasetId = ''
   target.datasetUrl = ''
   emitAllStates(false)
@@ -266,18 +290,22 @@ async function uploadFileByUid(uid: string) {
   formData.append('image', target.file)
 
   try {
-    const res = await request.post<unknown, UploadResponse>('/api/upload', formData)
+    const res = await request.post<unknown, UploadResponse>('/api/user/images/upload', formData)
     if (uploadSeqByUid.value[uid] !== nextSeq) return
 
-    if (!res?.success || !res?.dataset_id || !res?.dataset_url) {
+    const imageId = Number(res?.image?.id)
+    const imageUrl = String(res?.image?.url || '').trim()
+    if (!res?.success || !Number.isFinite(imageId) || imageId <= 0 || !imageUrl) {
       throw new Error(getErrorMessage(res, '参考图上传失败'))
     }
 
     const current = items.value.find((item) => item.uid === uid)
     if (!isValidItem(current)) return
     current.status = 'success'
-    current.datasetId = res.dataset_id
-    current.datasetUrl = res.dataset_url
+    current.imageId = imageId
+    current.imageUrl = imageUrl
+    current.datasetId = String(imageId)
+    current.datasetUrl = imageUrl
     current.error = ''
     emitAllStates(true)
   } catch (error) {
@@ -287,6 +315,8 @@ async function uploadFileByUid(uid: string) {
     const errorMsg = getErrorMessage(error, '参考图上传失败')
     current.status = 'error'
     current.error = errorMsg
+    current.imageId = 0
+    current.imageUrl = ''
     current.datasetId = ''
     current.datasetUrl = ''
     message.error(errorMsg)
@@ -346,7 +376,7 @@ function onRetryUpload(item: UploadListItem) {
 }
 
 function onPreviewImage(item: UploadListItem) {
-  const src = item.datasetUrl || item.localPreviewUrl
+  const src = item.imageUrl || item.datasetUrl || item.localPreviewUrl
   if (!src) return
   previewModalUrl.value = src
   previewModalOpen.value = true
