@@ -23,11 +23,12 @@
                       <span v-if="part.type === 'dataset'" class="prompt-mention-token">
                         <img class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" />
                         <span class="prompt-mention-label">{{ part.label || '图片' }}</span>
+                        
                       </span>
                       <span v-else>{{ part.text }}</span>
                     </template>
                   </div>
-                  <div class="prompt-tags">
+                  <div v-if="isPlainPrompt(item)" class="prompt-tags">
                     <button type="button" class="prompt-tag" @click="applyPromptToPanel(item.prompt)">
                       <IconFont type="icon-shiyongtishici" />
                       <span>使用提示词</span>
@@ -280,18 +281,11 @@ const pendingTitle = (item: GenerateHistoryItem) => {
   return '生成中...'
 }
 
-const pendingSubtitle = (item: GenerateHistoryItem) => {
-  if (item.status === 'FAILED' || item.status === 'CANCELLED') {
-    return item.errorMessage || '任务执行失败'
-  }
-  return item.progressText || '任务正在处理'
-}
-
 const pendingProgress = (item: GenerateHistoryItem) => {
   if (item.status === 'FAILED' || item.status === 'CANCELLED') return ''
   if (typeof item.progress !== 'number' || !Number.isFinite(item.progress)) return ''
   const value = Math.max(0, Math.min(100, item.progress))
-  return `${Math.round(value)}%`
+  return `${value * 100}%`
 }
 
 const displayCountLabel = (item: GenerateHistoryItem) => {
@@ -307,7 +301,7 @@ const renderPromptParts = (item: GenerateHistoryItem): PromptRenderPart[] => {
 
   const datasetsById = new Map((item.promptDatasets || []).map((dataset) => [dataset.datasetId, dataset]))
   const parts: PromptRenderPart[] = []
-  const tokenPattern = /\{([^{}]+)\}/g
+  const tokenPattern = /@?\{([^{}]+)\}/g
   let cursor = 0
   let match = tokenPattern.exec(text)
 
@@ -328,7 +322,7 @@ const renderPromptParts = (item: GenerateHistoryItem): PromptRenderPart[] => {
         type: 'dataset',
         text: match[0],
         datasetUrl: dataset.datasetUrl,
-        label: dataset.label,
+        label: '图片',
       })
     } else {
       parts.push({
@@ -352,6 +346,8 @@ const renderPromptParts = (item: GenerateHistoryItem): PromptRenderPart[] => {
 
   return parts.length ? parts : [{ key: 'text-0', type: 'text', text }]
 }
+
+const isPlainPrompt = (item: GenerateHistoryItem) => !renderPromptParts(item).some((part) => part.type === 'dataset')
 
 const isVideoUrl = (url: string) => /\.(mp4|webm|mov|m4v|m3u8)(\?|#|$)/i.test(String(url || ''))
 
@@ -428,6 +424,7 @@ const openDetailByHistoryIndex = (historyIndex: number, mediaIndex = 0) => {
     avatar: item.inputImages[0],
     createdAt: item.createdAt,
     prompt: item.prompt,
+    promptDatasets: item.promptDatasets,
     model: item.modelLabel,
     primaryTag: item.mediaType === 'VIDEO' ? '文生视频' : '文生图',
     ratioOrRes: item.ratioLabel,
@@ -966,7 +963,7 @@ onMounted(() => {
   color: rgba(0, 0, 0, 0.45);
   cursor: pointer;
   display: inline-flex;
-  font-size: 14px;
+  font-size: 12px;
   gap: 2px;
   height: 36px;
   line-height: 36px;

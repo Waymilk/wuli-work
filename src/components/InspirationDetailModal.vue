@@ -36,10 +36,10 @@
 
           <div class="rail-nav">
             <button class="rail-btn rail-nav-btn" type="button" aria-label="上一条" @click="handlePrevClick">
-              <UpOutlined />
+              <IconFont type="icon-up" />
             </button>
             <button class="rail-btn rail-nav-btn" type="button" aria-label="下一条" @click="handleNextClick">
-              <DownOutlined />
+              <IconFont type="icon-down" />
             </button>
           </div>
         </div>
@@ -71,8 +71,18 @@
           <div class="detail-content">
             <div class="detail-title">提示词</div>
             <div class="detail-prompt">
-              <IconFont type="icon-fuzhi" />
-              <span>{{ item.prompt }}</span>
+              <button v-if="!hasPromptReference" class="detail-prompt-copy" type="button" aria-label="复制提示词" @click="copyPrompt">
+                <IconFont type="icon-fuzhi" />
+              </button>
+              <span class="detail-prompt-text">
+                <template v-for="part in promptParts" :key="part.key">
+                  <span v-if="part.type === 'dataset'" class="prompt-mention-token">
+                    <img class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" />
+                    <span class="prompt-mention-label">{{ part.label || '图片' }}</span>
+                  </span>
+                  <span v-else>{{ part.text }}</span>
+                </template>
+              </span>
             </div>
 
             <div class="detail-tags">
@@ -91,7 +101,7 @@
               class="detail-action-btn"
               :class="{ primary: action.primary }"
               type="button"
-              @click="action.onClick?.()"
+              @click="notifyFeatureUnavailable"
             >
               <IconFont :type="resolveActionIcon(action)" />
               <span>{{ action.label }}</span>
@@ -104,7 +114,7 @@
               :key="action.key"
               class="bottomActionBtn"
               type="button"
-              @click="action.onClick?.()"
+              @click="notifyFeatureUnavailable"
             >
               <IconFont :type="action.icon" />
               <span>{{ action.label }}</span>
@@ -119,7 +129,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { createFromIconfontCN } from '@ant-design/icons-vue'
-import { CloseOutlined, DownOutlined, UpOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
 
 export type InspirationDetailAction = {
   key: 'reference' | 'clone' | string
@@ -142,6 +153,12 @@ export type InspirationDetailThumbnail = {
   type?: 'IMAGE' | 'VIDEO'
 }
 
+export type InspirationDetailPromptDataset = {
+  datasetId: string
+  datasetUrl: string
+  label?: string
+}
+
 export type InspirationDetailItem = {
   type: 'IMAGE' | 'VIDEO'
   src: string
@@ -153,6 +170,7 @@ export type InspirationDetailItem = {
   ratioOrRes?: string
   durationOrCount?: string
   sizeLabel?: string
+  promptDatasets?: InspirationDetailPromptDataset[]
   thumbnails?: InspirationDetailThumbnail[]
   thumbnailList?: InspirationDetailThumbnail[]
   actions?: InspirationDetailAction[]
@@ -169,6 +187,14 @@ type DetailTag = {
   key: string
   label: string
   avatar?: string
+}
+
+type PromptRenderPart = {
+  key: string
+  type: 'text' | 'dataset'
+  text: string
+  datasetUrl?: string
+  label?: string
 }
 
 const IconFont = createFromIconfontCN({
@@ -206,6 +232,60 @@ const currentMedia = computed<InspirationDetailThumbnail>(() => {
   return list[Math.min(activeThumbIndex.value, list.length - 1)]
 })
 
+const promptParts = computed<PromptRenderPart[]>(() => {
+  const text = String(props.item?.prompt || '')
+  if (!text) return []
+
+  const datasetsById = new Map((props.item?.promptDatasets || []).map((dataset) => [dataset.datasetId, dataset]))
+  const parts: PromptRenderPart[] = []
+  const tokenPattern = /@?\{([^{}]+)\}/g
+  let cursor = 0
+  let match = tokenPattern.exec(text)
+
+  while (match) {
+    if (match.index > cursor) {
+      parts.push({
+        key: `text-${cursor}`,
+        type: 'text',
+        text: text.slice(cursor, match.index),
+      })
+    }
+
+    const datasetId = String(match[1] || '').trim()
+    const dataset = datasetsById.get(datasetId)
+    if (dataset?.datasetUrl) {
+      parts.push({
+        key: `dataset-${match.index}-${datasetId}`,
+        type: 'dataset',
+        text: match[0],
+        datasetUrl: dataset.datasetUrl,
+        label: dataset.label,
+      })
+    } else {
+      parts.push({
+        key: `text-${match.index}`,
+        type: 'text',
+        text: match[0],
+      })
+    }
+
+    cursor = match.index + match[0].length
+    match = tokenPattern.exec(text)
+  }
+
+  if (cursor < text.length) {
+    parts.push({
+      key: `text-${cursor}`,
+      type: 'text',
+      text: text.slice(cursor),
+    })
+  }
+
+  return parts
+})
+
+const hasPromptReference = computed(() => promptParts.value.some((part) => part.type === 'dataset'))
+
 watch(
   () => props.item,
   (next) => {
@@ -238,6 +318,37 @@ const onVideoMouseEnter = () => {
 
 const onVideoMouseLeave = () => {
   showVideoControls.value = false
+}
+
+const copyPrompt = async () => {
+  const text = String(props.item?.prompt || '').trim()
+  if (!text) {
+    message.warning('当前提示词为空')
+    return
+  }
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    message.success('复制成功')
+  } catch {
+    message.error('复制失败，请重试')
+  }
+}
+
+const notifyFeatureUnavailable = () => {
+  message.info('功能暂未开放')
 }
 
 watch(
@@ -526,11 +637,64 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
   margin: 0 0 16px;
   word-break: break-word;
 
+}
+
+.detail-prompt-copy {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 28px;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  width: 18px;
+
   :deep(.anticon),
   :deep(svg) {
-    color: rgba(0, 0, 0, 0.45);
+    color: currentColor;
     font-size: 14px;
   }
+
+  &:hover {
+    color: #8b52ff;
+  }
+}
+
+.detail-prompt-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.prompt-mention-token {
+  align-items: center;
+  background: #f5efff;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  height: 28px;
+  margin: 0 4px 0 0;
+  padding: 0 8px 0 4px;
+  vertical-align: middle;
+}
+
+.prompt-mention-thumb {
+  border-radius: 4px;
+  flex-shrink: 0;
+  height: 18px;
+  object-fit: cover;
+  width: 18px;
+}
+
+.prompt-mention-label {
+  color: #8b52ff;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
 }
 
 .detail-tags {

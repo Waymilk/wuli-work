@@ -119,7 +119,7 @@
                 <img :src="selectedModelIcon" :alt="selectedModelName" />
                 <span class="name">{{ selectedModelName }}</span>
               </span>
-              <DownOutlined class="arrow" />
+              <IconFont type="icon-down" class="arrow" />
             </button>
           </a-popover>
 
@@ -195,7 +195,7 @@
                   <span>{{ value }}</span>
                 </template>
               </span>
-              <DownOutlined class="arrow" />
+              <IconFont type="icon-down" class="arrow" />
             </button>
           </a-popover>
 
@@ -212,14 +212,14 @@
               <div class="at-popover-inner">
                 <div v-if="mentionDatasets.length" class="at-list">
                   <button
-                    v-for="item in mentionDatasets"
+                    v-for="(item, index) in mentionDatasets"
                     :key="item.uid"
                     type="button"
                     class="at-list-item"
                     @click="onSelectMention(item)"
                   >
                     <img class="at-list-thumb" :src="item.datasetUrl" :alt="item.label" />
-                    <span class="at-list-text">{{ item.label }}</span>
+                    <span class="at-list-text">{{ `${item.label}${index + 1}` }}</span>
                   </button>
                 </div>
                 <a-empty v-else description="暂无图片或视频" />
@@ -267,7 +267,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { DownOutlined, createFromIconfontCN } from '@ant-design/icons-vue'
+import { createFromIconfontCN } from '@ant-design/icons-vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
 import creditsIcon from '@/assets/credits.svg'
@@ -567,7 +567,7 @@ function serializePromptFromEditor() {
   const clone = root.cloneNode(true) as HTMLDivElement
   clone.querySelectorAll<HTMLElement>('.prompt-mention-token').forEach((token) => {
     const datasetId = token.dataset.datasetId || ''
-    const textNode = document.createTextNode(datasetId ? `{${datasetId}}` : '')
+    const textNode = document.createTextNode(datasetId ? `@{${datasetId}}` : '')
     token.replaceWith(textNode)
   })
   const raw = clone.innerText || clone.textContent || ''
@@ -687,13 +687,13 @@ function onReferenceFileChange(payload: UploadFileChangeEventPayload) {
 function onReferenceUploadResult(payload: UploadResultEventPayload) {
   isReferenceUploading.value = payload.uploading
   const uploadedImages = (payload.datasets || []).filter((item) => item.imageId && item.imageUrl)
-  const nextMentionList: MentionDatasetItem[] = uploadedImages.map((item, index) => ({
+  const nextMentionList: MentionDatasetItem[] = uploadedImages.map((item) => ({
     uid: item.uid,
     imageId: item.imageId || 0,
     imageUrl: item.imageUrl || '',
     datasetId: item.datasetId,
     datasetUrl: item.datasetUrl,
-    label: `图片${index + 1}`,
+    label: `图片`,
   }))
   mentionDatasets.value = nextMentionList
   pruneMissingMentionTokens(new Set(nextMentionList.map((item) => item.datasetId)))
@@ -1640,11 +1640,10 @@ onBeforeUnmount(() => {
     flex-direction: row;
     .input-row{
       flex:1;
-      .upload-btn{
+      :deep(.upload-btn){
         width: 50px;
         height: 50px;
         border:none;
-
       }
       .editor-wrap{
         flex:1;
@@ -2356,7 +2355,7 @@ onBeforeUnmount(() => {
   }
 }
 :deep(.ant-popover-inner){
-  padding:6px;
+  padding:12px;
 }
 .at-popover-inner {
   background: #fff;

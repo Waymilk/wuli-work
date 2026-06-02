@@ -5,7 +5,7 @@ const useDevProxy = import.meta.env.DEV && import.meta.env.VITE_USE_DEV_PROXY !=
 
 const request = axios.create({
   baseURL: useDevProxy ? '/' : configuredBaseURL,
-  timeout: 10000,
+  timeout: 15000,
 })
 
 request.interceptors.request.use((config) => {
