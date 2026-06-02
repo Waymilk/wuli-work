@@ -37,9 +37,9 @@
           <img class="avatar" src="/wuli-icons/avatar-default.png" alt="avatar" />
         </button>
 
-        <button class="icon-btn api-token-entry" type="button" @click="apiModalOpen = true">
+        <!-- <button class="icon-btn api-token-entry" type="button" @click="apiModalOpen = true">
           <IconFont type="icon-Outlined-API" class="icon-24" />
-        </button>
+        </button> -->
 
         <button
           ref="messageBtnRef"

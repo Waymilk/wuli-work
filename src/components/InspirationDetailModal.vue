@@ -80,9 +80,6 @@
                 <img v-if="tag.avatar" class="tag-avatar" :src="tag.avatar" alt="" />
                 {{ tag.label }}
               </span>
-            </div>
-
-            <div class="detail-size-row">
               <span class="detail-tag">{{ sizeLabel }}</span>
             </div>
           </div>

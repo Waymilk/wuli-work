@@ -18,7 +18,15 @@
                 </div>
 
                 <div class="prompt-text-wrap">
-                  <div class="prompt-text">{{ item.prompt }}</div>
+                  <div class="prompt-text">
+                    <template v-for="part in renderPromptParts(item)" :key="part.key">
+                      <span v-if="part.type === 'dataset'" class="prompt-mention-token">
+                        <img class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" />
+                        <span class="prompt-mention-label">{{ part.label || '图片' }}</span>
+                      </span>
+                      <span v-else>{{ part.text }}</span>
+                    </template>
+                  </div>
                   <div class="prompt-tags">
                     <button type="button" class="prompt-tag" @click="applyPromptToPanel(item.prompt)">
                       <IconFont type="icon-shiyongtishici" />
@@ -210,6 +218,14 @@ type GenerateTabPanelExpose = {
   setPrompt: (value: string) => void
 }
 
+type PromptRenderPart = {
+  key: string
+  type: 'text' | 'dataset'
+  text: string
+  datasetUrl?: string
+  label?: string
+}
+
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const generatePanelRef = ref<GenerateTabPanelExpose | null>(null)
 const showMini = ref(false)
@@ -283,6 +299,58 @@ const displayCountLabel = (item: GenerateHistoryItem) => {
   const digits = String(item.countLabel || '').replace(/[^\d]/g, '')
   if (!digits) return item.countLabel || '-'
   return `${digits}秒`
+}
+
+const renderPromptParts = (item: GenerateHistoryItem): PromptRenderPart[] => {
+  const text = String(item.prompt || '')
+  if (!text) return []
+
+  const datasetsById = new Map((item.promptDatasets || []).map((dataset) => [dataset.datasetId, dataset]))
+  const parts: PromptRenderPart[] = []
+  const tokenPattern = /\{([^{}]+)\}/g
+  let cursor = 0
+  let match = tokenPattern.exec(text)
+
+  while (match) {
+    if (match.index > cursor) {
+      parts.push({
+        key: `text-${cursor}`,
+        type: 'text',
+        text: text.slice(cursor, match.index),
+      })
+    }
+
+    const datasetId = String(match[1] || '').trim()
+    const dataset = datasetsById.get(datasetId)
+    if (dataset?.datasetUrl) {
+      parts.push({
+        key: `dataset-${match.index}-${datasetId}`,
+        type: 'dataset',
+        text: match[0],
+        datasetUrl: dataset.datasetUrl,
+        label: dataset.label,
+      })
+    } else {
+      parts.push({
+        key: `text-${match.index}`,
+        type: 'text',
+        text: match[0],
+      })
+    }
+
+    cursor = match.index + match[0].length
+    match = tokenPattern.exec(text)
+  }
+
+  if (cursor < text.length) {
+    parts.push({
+      key: `text-${cursor}`,
+      type: 'text',
+      text: text.slice(cursor),
+    })
+  }
+
+  return parts.length ? parts : [{ key: 'text-0', type: 'text', text }]
 }
 
 const isVideoUrl = (url: string) => /\.(mp4|webm|mov|m4v|m3u8)(\?|#|$)/i.test(String(url || ''))
@@ -572,6 +640,34 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.prompt-mention-token {
+  align-items: center;
+  background: #f5efff;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  height: 28px;
+  margin: 0 4px 0 0;
+  padding: 0 8px 0 4px;
+  vertical-align: middle;
+}
+
+.prompt-mention-thumb {
+  border-radius: 4px;
+  flex-shrink: 0;
+  height: 18px;
+  object-fit: cover;
+  width: 18px;
+}
+
+.prompt-mention-label {
+  color: #8b52ff;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
 }
 
 .prompt-tags {
