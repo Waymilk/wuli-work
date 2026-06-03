@@ -8,10 +8,22 @@
         :class="[`is-${item.status}`, { disabled }]"
         :style="stackItemStyle(index)"
       >
+        <video
+          v-if="isVideoItem(item)"
+          class="upload-preview upload-video"
+          :class="{ blurred: item.status === 'uploading' }"
+          :src="resolveItemDisplayUrl(item)"
+          muted
+          playsinline
+          preload="metadata"
+          @mouseenter="onVideoHoverEnter"
+          @mouseleave="onVideoHoverLeave"
+        />
         <img
+          v-else
           class="upload-preview"
           :class="{ blurred: item.status === 'uploading' }"
-          :src="item.imageUrl || item.datasetUrl || item.localPreviewUrl"
+          :src="resolveItemDisplayUrl(item)"
           alt="上传预览"
           @click.stop.prevent="onPreviewImage(item)"
         />
@@ -26,7 +38,7 @@
           <button class="upload-retry-btn" type="button" @click.stop.prevent="onRetryUpload(item)">重试</button>
         </div>
 
-        <!-- <span class="upload-tag" v-if="isVideo">首帧</span> -->
+        <span class="upload-tag" v-if="resolvedTagLabel">{{ resolvedTagLabel }}</span>
 
         <button class="upload-remove-btn" type="button" @click.stop.prevent="onRemoveImage(item.uid)">×</button>
       </div>
@@ -40,9 +52,9 @@
           :disabled="disabled"
           @change="onUploadChange"
         >
-          <div class="upload-btn" :class="{ disabled }" :title="isVideo ? '上传首帧' : '上传参考图'">
+          <div class="upload-btn" :class="{ disabled }">
             <span class="upload-plus">+</span>
-            <!-- <span class="upload-tag" v-if="isVideo">首帧</span> -->
+            <span class="upload-tag" v-if="resolvedTagLabel">{{ resolvedTagLabel }}</span>
           </div>
         </AUpload>
       </div>
@@ -130,11 +142,13 @@ const props = withDefaults(defineProps<{
   accept?: string
   maxCount?: number
   disabled?: boolean
+  tagLabel?: string
 }>(), {
   isVideo: false,
   accept: 'image/*',
   maxCount: 1,
   disabled: false,
+  tagLabel: '',
 })
 
 const emit = defineEmits<{
@@ -148,6 +162,7 @@ const previewModalOpen = ref(false)
 const previewModalUrl = ref('')
 
 const maxCountSafe = computed(() => Math.max(1, props.maxCount || 1))
+const resolvedTagLabel = computed(() => props.tagLabel)
 const allowMultiple = computed(() => maxCountSafe.value > 1)
 const successCount = computed(() => items.value.filter((item) => item.status === 'success').length)
 const uploadingCount = computed(() => items.value.filter((item) => item.status === 'uploading').length)
@@ -197,6 +212,39 @@ function isValidItem(item: UploadListItem | undefined): item is UploadListItem {
 function revokeItemPreview(item: UploadListItem) {
   if (!item.localPreviewUrl) return
   URL.revokeObjectURL(item.localPreviewUrl)
+}
+
+function resolveItemDisplayUrl(item: UploadListItem) {
+  return item.imageUrl || item.datasetUrl || item.localPreviewUrl
+}
+
+function isVideoUrl(url: string) {
+  return /\.(mp4|webm|mov|m4v|m3u8)(\?|#|$)/i.test(String(url || ''))
+}
+
+function isVideoItem(item: UploadListItem) {
+  return item.file?.type?.startsWith('video/') || isVideoUrl(resolveItemDisplayUrl(item))
+}
+
+const onVideoHoverEnter = async (event: Event) => {
+  const target = event.currentTarget as HTMLVideoElement | null
+  if (!target) return
+  try {
+    await target.play()
+  } catch {
+    // noop
+  }
+}
+
+const onVideoHoverLeave = (event: Event) => {
+  const target = event.currentTarget as HTMLVideoElement | null
+  if (!target) return
+  target.pause()
+  try {
+    target.currentTime = 0
+  } catch {
+    // noop
+  }
 }
 
 function clearAll() {
@@ -361,6 +409,18 @@ const onUploadChange: UploadProps['onChange'] = (info) => {
   void uploadFileByUid(uid)
 }
 
+function uploadFiles(files: File[]) {
+  if (props.disabled || !files.length) return 0
+  const remaining = Math.max(0, maxCountSafe.value - items.value.length)
+  const acceptedFiles = files.slice(0, remaining)
+  acceptedFiles.forEach((file) => {
+    const uid = `drop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    addLocalItem(file, uid)
+    void uploadFileByUid(uid)
+  })
+  return acceptedFiles.length
+}
+
 function onRemoveImage(uid: string) {
   const index = items.value.findIndex((item) => item.uid === uid)
   if (index === -1) return
@@ -376,7 +436,8 @@ function onRetryUpload(item: UploadListItem) {
 }
 
 function onPreviewImage(item: UploadListItem) {
-  const src = item.imageUrl || item.datasetUrl || item.localPreviewUrl
+  if (isVideoItem(item)) return
+  const src = resolveItemDisplayUrl(item)
   if (!src) return
   previewModalUrl.value = src
   previewModalOpen.value = true
@@ -384,6 +445,10 @@ function onPreviewImage(item: UploadListItem) {
 
 onBeforeUnmount(() => {
   clearAll()
+})
+
+defineExpose({
+  uploadFiles,
 })
 </script>
 
@@ -502,7 +567,7 @@ onBeforeUnmount(() => {
     position: absolute;
     text-align: center;
     top: 4px;
-    z-index: 5;
+    z-index: 8;
     background: #e2ccff;
     border-radius: 8px;
     padding: 0 3px;
@@ -529,6 +594,10 @@ onBeforeUnmount(() => {
       filter: blur(2px);
       transform: scale(1.04);
     }
+  }
+
+  .upload-video {
+    background: #000;
   }
 
   .upload-overlay {

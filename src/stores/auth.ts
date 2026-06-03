@@ -9,6 +9,7 @@ interface AuthUser {
   id: number
   username: string
   email?: string
+  avatar_url?: string
 }
 
 function safeParseUser(value: string | null) {
@@ -51,6 +52,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  function updateUser(nextUser: Partial<AuthUser>) {
+    if (!user.value) return
+    user.value = {
+      ...user.value,
+      ...nextUser,
+    }
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(USER_KEY, JSON.stringify(user.value))
+    }
+  }
+
   function restoreFromStorage() {
     if (typeof window === 'undefined') return
     const storageToken = window.localStorage.getItem(TOKEN_KEY) || ''
@@ -83,6 +95,7 @@ export const useAuthStore = defineStore('auth', () => {
     authModalOpen,
     pageRefreshKey,
     setAuth,
+    updateUser,
     clearAuth,
     restoreFromStorage,
     openAuthModal,

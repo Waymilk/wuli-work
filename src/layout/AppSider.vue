@@ -34,7 +34,7 @@
         </div>
 
         <button class="avatar-button" type="button" @click="handleAvatarClick">
-          <img class="avatar" src="/wuli-icons/avatar-default.png" alt="avatar" />
+          <img class="avatar" :src="resolvedAvatarUrl" alt="avatar" @error="onAvatarImageError" />
         </button>
 
         <!-- <button class="icon-btn api-token-entry" type="button" @click="apiModalOpen = true">
@@ -90,7 +90,7 @@
               </div> -->
               <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('experience')">体验优化计划</button> -->
               <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('watermark')">AI生成水印设置</button> -->
-              <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('account')">账号设置</button> -->
+              <button type="button" class="more-popover-item" @click="onMoreMenuAction('account')">账号设置</button>
               <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('about')">关于我们</button> -->
               <button v-if="isLoggedIn" type="button" class="more-popover-item" @click="onMoreMenuAction('logout')">退出</button>
             </div>
@@ -136,20 +136,26 @@
       <button class="wuli-modal-close" type="button" @click="closeProfileModal">×</button>
       <div class="mini-modal-content">
         <div class="avatar-edit-header">
-          <img class="avatar-edit-image" src="/wuli-icons/avatar-default.png" alt="avatar" />
-          <a-button class="avatar-change-btn" @click="handleAvatarChangeClick">更改头像</a-button>
+          <img class="avatar-edit-image" :src="resolvedAvatarUrl" alt="avatar" @error="onAvatarImageError" />
+          <input
+            ref="avatarFileInputRef"
+            class="avatar-file-input"
+            type="file"
+            accept="image/*"
+            @change="handleAvatarFileChange"
+          />
+          <a-button class="avatar-change-btn" :loading="isAvatarUpdating" @click="handleAvatarChangeClick">更改头像</a-button>
         </div>
         <a-form layout="vertical" class="mini-profile-form" @submit.prevent>
           <a-form-item label="邮箱" class="mini-form-item">
             <a-input class="mini-input mini-input-readonly" :value="profileEmail" disabled />
           </a-form-item>
           <a-form-item label="用户名" class="mini-form-item">
-            <a-input v-model:value="profileUsernameDraft" class="mini-input" :disabled="isProfileLoading" />
+            <a-input class="mini-input mini-input-readonly" :value="profileUsernameDraft" disabled />
           </a-form-item>
-          <div class="mini-tip">长度2-15个字符，支持中文、英文、数字、下划线、横线</div>
-          <div class="mini-actions">
-            <a-button class="btn-ghost" @click="closeProfileModal">暂不修改</a-button>
-            <a-button class="btn-dark" :disabled="isProfileLoading" @click="confirmProfileModal">确定修改</a-button>
+          <div class="mini-tip">头像会同步到当前账号资料中</div>
+          <div class="mini-actions mini-actions-single">
+            <a-button class="btn-dark" :disabled="isProfileLoading || isAvatarUpdating" @click="closeProfileModal">关闭</a-button>
           </div>
         </a-form>
       </div>
@@ -246,22 +252,56 @@
       <button class="wuli-modal-close account-close" type="button" @click="accountModalOpen = false">×</button>
       <div class="account-modal-body">
         <h3 class="account-title">账号设置</h3>
-        <div class="account-section-title">账号信息</div>
-        <div class="account-info-card">
-          <div class="account-info-row">
-            <span>注册手机号</span>
-            <span class="account-value">
-              13554884321
-              <button type="button" class="account-copy" @click="copyText('13554884321')">⧉</button>
-            </span>
+        <a-form layout="vertical" class="account-form" @submit.prevent>
+          <div class="account-section-title">修改密码</div>
+          <a-form-item label="当前密码" class="account-form-item">
+            <a-input
+              v-model:value="oldPassword"
+              type="password"
+              class="account-input"
+              autocomplete="current-password"
+              placeholder="请输入当前密码"
+            />
+          </a-form-item>
+          <a-form-item label="新密码" class="account-form-item">
+            <a-input
+              v-model:value="newPassword"
+              type="password"
+              class="account-input"
+              autocomplete="new-password"
+              placeholder="请输入新密码"
+            />
+          </a-form-item>
+          <a-form-item label="确认新密码" class="account-form-item">
+            <a-input
+              v-model:value="confirmNewPassword"
+              type="password"
+              class="account-input"
+              autocomplete="new-password"
+              placeholder="请再次输入新密码"
+            />
+          </a-form-item>
+          <a-button class="account-submit-btn" :loading="isChangingPassword" @click="handleChangePassword">
+            确认修改密码
+          </a-button>
+
+          <div class="account-danger-zone">
+            <div class="account-section-title">注销账号</div>
+            <p class="account-danger-desc">注销后账号将不可登录，相关数据会进入删除流程。</p>
+            <a-form-item label="当前密码" class="account-form-item">
+              <a-input
+                v-model:value="deactivatePassword"
+                type="password"
+                class="account-input"
+                autocomplete="current-password"
+                placeholder="请输入当前密码"
+              />
+            </a-form-item>
+            <a-button class="account-danger-btn" :loading="isDeactivating" @click="handleDeactivateAccount">
+              确认永久注销账号
+            </a-button>
           </div>
-          <div class="account-info-row">
-            <span>注册时间</span>
-            <span class="account-value">2026.05.15</span>
-          </div>
-        </div>
-        <div class="account-section-title">注销账号</div>
-        <button type="button" class="account-danger-btn">确认永久注销账号</button>
+        </a-form>
       </div>
     </a-modal>
   </aside>
@@ -331,6 +371,15 @@ const creditsValue = ref<string | number | null>(null)
 const profileEmail = ref('')
 const profileUsernameDraft = ref('')
 const isProfileLoading = ref(false)
+const avatarUrl = ref('')
+const avatarFileInputRef = ref<HTMLInputElement | null>(null)
+const isAvatarUpdating = ref(false)
+const oldPassword = ref('')
+const newPassword = ref('')
+const confirmNewPassword = ref('')
+const deactivatePassword = ref('')
+const isChangingPassword = ref(false)
+const isDeactivating = ref(false)
 let themeSubmenuTimer: ReturnType<typeof setTimeout> | null = null
 
 const messagePanelRef = ref<HTMLElement | null>(null)
@@ -354,6 +403,11 @@ const creditsDisplay = computed(() => {
 const displayUsername = computed(() => {
   const next = String(authStore.user?.username || '').trim()
   return next || '用户3529_2654'
+})
+const defaultAvatarUrl = '/wuli-icons/avatar-default.png'
+const resolvedAvatarUrl = computed(() => {
+  const next = String(avatarUrl.value || authStore.user?.avatar_url || '').trim()
+  return next || defaultAvatarUrl
 })
 
 const openInviteModal = () => {
@@ -387,6 +441,31 @@ const performLogout = async () => {
   }
 }
 
+const resolveErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error === 'string' && error.trim()) return error.trim()
+  if (error && typeof error === 'object') {
+    const err = error as {
+      detail?: unknown
+      message?: unknown
+      error?: unknown
+      response?: { data?: { detail?: unknown; message?: unknown; error?: unknown } }
+    }
+    const data = err.response?.data
+    const candidate = data?.detail ?? data?.message ?? data?.error ?? err.detail ?? err.message ?? err.error
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+  }
+  return fallback
+}
+
+const resetAccountForms = () => {
+  oldPassword.value = ''
+  newPassword.value = ''
+  confirmNewPassword.value = ''
+  deactivatePassword.value = ''
+  isChangingPassword.value = false
+  isDeactivating.value = false
+}
+
 const onMoreMenuAction = async (key: string) => {
   morePopoverOpen.value = false
   themeSubmenuOpen.value = false
@@ -394,6 +473,10 @@ const onMoreMenuAction = async (key: string) => {
     feedbackModalOpen.value = true
   }
   if (key === 'account') {
+    if (!isLoggedIn.value) {
+      authStore.openAuthModal()
+      return
+    }
     accountModalOpen.value = true
   }
   if (key === 'logout') {
@@ -415,11 +498,41 @@ interface UserInfoResponse {
   username?: string
   email?: string
   credits?: string | number | null
+  avatar_url?: string
+}
+
+interface UploadImageResponse {
+  success?: boolean
+  image?: {
+    id?: number | string
+    url?: string
+  }
+  message?: string
+  detail?: string
+}
+
+interface AvatarUpdateResponse {
+  success?: boolean
+  avatar_url?: string
+  message?: string
+  detail?: string
 }
 
 const loadUserInfo = async () => {
   try {
     const res = await request.get<unknown, UserInfoResponse>('/api/user/info')
+    const nextAvatarUrl = String(res?.avatar_url || '').trim()
+    if (nextAvatarUrl) {
+      avatarUrl.value = nextAvatarUrl
+    }
+    if (res?.id || res?.username || res?.email || nextAvatarUrl) {
+      const nextUser: Partial<{ id: number; username: string; email: string; avatar_url: string }> = {}
+      if (typeof res?.id === 'number') nextUser.id = res.id
+      if (typeof res?.username === 'string' && res.username.trim()) nextUser.username = res.username.trim()
+      if (typeof res?.email === 'string') nextUser.email = res.email.trim()
+      if (nextAvatarUrl) nextUser.avatar_url = nextAvatarUrl
+      authStore.updateUser(nextUser)
+    }
     if (!res || !Object.prototype.hasOwnProperty.call(res, 'credits')) {
       creditsValue.value = null
       return
@@ -442,6 +555,11 @@ const loadProfileForModal = async () => {
     const res = await request.get<unknown, UserInfoResponse>('/api/user/info')
     profileEmail.value = String(res?.email || authStore.user?.email || '').trim()
     profileUsernameDraft.value = String(res?.username || authStore.user?.username || '').trim()
+    const nextAvatarUrl = String(res?.avatar_url || '').trim()
+    if (nextAvatarUrl) {
+      avatarUrl.value = nextAvatarUrl
+      authStore.updateUser({ avatar_url: nextAvatarUrl })
+    }
   } catch (_error) {
     profileEmail.value = String(authStore.user?.email || '').trim()
     profileUsernameDraft.value = String(authStore.user?.username || '').trim()
@@ -455,14 +573,132 @@ const closeProfileModal = () => {
   avatarModalOpen.value = false
   resetProfileDraft()
   isProfileLoading.value = false
-}
-
-const confirmProfileModal = () => {
-  closeProfileModal()
+  isAvatarUpdating.value = false
+  if (avatarFileInputRef.value) {
+    avatarFileInputRef.value.value = ''
+  }
 }
 
 const handleAvatarChangeClick = () => {
-  message.info('功能暂未开放')
+  if (isAvatarUpdating.value) return
+  avatarFileInputRef.value?.click()
+}
+
+const handleAvatarFileChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0]
+  if (input) input.value = ''
+  if (!file || isAvatarUpdating.value) return
+  if (!file.type.startsWith('image/')) {
+    message.warning('请选择图片文件')
+    return
+  }
+
+  isAvatarUpdating.value = true
+  try {
+    const formData = new FormData()
+    formData.append('image', file)
+    const uploadRes = await request.post<unknown, UploadImageResponse>('/api/user/images/upload', formData)
+    const imageId = Number(uploadRes?.image?.id)
+    if (!uploadRes?.success || !Number.isFinite(imageId) || imageId <= 0) {
+      throw new Error(resolveErrorMessage(uploadRes, '头像上传失败'))
+    }
+
+    const avatarRes = await request.post<unknown, AvatarUpdateResponse>('/api/user/avatar', {
+      image_id: imageId,
+    })
+    const nextAvatarUrl = String(avatarRes?.avatar_url || uploadRes?.image?.url || '').trim()
+    if (!avatarRes?.success || !nextAvatarUrl) {
+      throw new Error(resolveErrorMessage(avatarRes, '头像更新失败'))
+    }
+
+    avatarUrl.value = nextAvatarUrl
+    authStore.updateUser({ avatar_url: nextAvatarUrl })
+    message.success('头像已更新')
+  } catch (error) {
+    message.error(resolveErrorMessage(error, '头像更新失败'))
+  } finally {
+    isAvatarUpdating.value = false
+  }
+}
+
+const handleChangePassword = async () => {
+  const oldValue = oldPassword.value.trim()
+  const newValue = newPassword.value.trim()
+  const confirmValue = confirmNewPassword.value.trim()
+  if (!oldValue || !newValue || !confirmValue) {
+    message.warning('请完整填写密码信息')
+    return
+  }
+  if (newValue.length < 6) {
+    message.warning('新密码至少需要6位')
+    return
+  }
+  if (newValue === oldValue) {
+    message.warning('新密码不能和当前密码相同')
+    return
+  }
+  if (newValue !== confirmValue) {
+    message.warning('两次输入的新密码不一致')
+    return
+  }
+  if (isChangingPassword.value) return
+
+  isChangingPassword.value = true
+  try {
+    await request.post('/api/auth/change-password', {
+      old_password: oldValue,
+      new_password: newValue,
+    })
+    message.success('密码修改成功，请重新登录')
+    accountModalOpen.value = false
+    authStore.clearAuth()
+    authStore.openAuthModal()
+    await router.push('/explore')
+  } catch (error) {
+    message.error(resolveErrorMessage(error, '密码修改失败'))
+  } finally {
+    isChangingPassword.value = false
+  }
+}
+
+const handleDeactivateAccount = () => {
+  const password = deactivatePassword.value.trim()
+  if (!password) {
+    message.warning('请输入当前密码')
+    return
+  }
+  if (isDeactivating.value) return
+
+  Modal.confirm({
+    title: '确认永久注销账号？',
+    content: '注销后账号将不可登录，请确认后继续。',
+    okText: '确认注销',
+    cancelText: '取消',
+    okButtonProps: { danger: true },
+    centered: true,
+    onOk: async () => {
+      isDeactivating.value = true
+      try {
+        await request.post('/api/auth/deactivate', { password })
+        message.success('账号已注销')
+        accountModalOpen.value = false
+        authStore.clearAuth()
+        authStore.closeAuthModal()
+        await router.push('/explore')
+      } catch (error) {
+        message.error(resolveErrorMessage(error, '账号注销失败'))
+      } finally {
+        isDeactivating.value = false
+      }
+    },
+  })
+}
+
+const onAvatarImageError = (event: Event) => {
+  const target = event.target as HTMLImageElement | null
+  if (!target || target.src.endsWith(defaultAvatarUrl)) return
+  target.src = defaultAvatarUrl
 }
 
 const handleCreditsRedeemed = (payload: { balance?: string | number | null }) => {
@@ -543,6 +779,7 @@ watch(
   (loggedIn) => {
     if (!loggedIn) {
       creditsValue.value = null
+      avatarUrl.value = ''
       return
     }
     void loadUserInfo()
@@ -565,6 +802,10 @@ onBeforeUnmount(() => {
     clearTimeout(themeSubmenuTimer)
     themeSubmenuTimer = null
   }
+})
+
+watch(accountModalOpen, (open) => {
+  if (!open) resetAccountForms()
 })
 </script>
 
@@ -1123,8 +1364,7 @@ onBeforeUnmount(() => {
   color: rgba(0, 0, 0, 0.65);
 }
 
-.fb-copy-btn,
-.account-copy {
+.fb-copy-btn {
   border: none;
   background: transparent;
   color: rgba(0, 0, 0, 0.35);
@@ -1173,42 +1413,83 @@ onBeforeUnmount(() => {
   color: rgba(0, 0, 0, 0.88);
 }
 
-.account-info-card {
+.account-form {
+  margin-top: 8px;
+}
+
+.account-form-item {
+  margin-bottom: 10px;
+
+  :deep(.ant-form-item-label) {
+    padding-bottom: 4px;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    font-size: 13px;
+    color: rgba(0, 0, 0, 0.78);
+  }
+}
+
+.account-input {
+  height: 36px;
   border-radius: 8px;
-  background: #f7f7fb;
-  overflow: hidden;
+  border-color: #ebebeb;
+  background: #fafafa;
+  font-size: 14px;
 }
 
-.account-info-row {
-  height: 40px;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 13px;
-  color: rgba(0, 0, 0, 0.65);
+:deep(.account-input.ant-input:hover),
+:deep(.account-input.ant-input:focus) {
+  border-color: #6928fe;
+  box-shadow: none;
 }
 
-.account-info-row + .account-info-row {
-  border-top: 1px solid #f0f0f0;
-}
-
-.account-value {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: rgba(0, 0, 0, 0.88);
-}
-
+.account-submit-btn,
 .account-danger-btn {
   width: 100%;
   height: 38px;
-  border: none;
   border-radius: 8px;
-  background: #f4f4f9;
-  color: rgba(0, 0, 0, 0.65);
   font-size: 14px;
   font-weight: 600;
+}
+
+.account-submit-btn {
+  border-color: #1f1f1f;
+  background: #1f1f1f;
+  color: #fff;
+}
+
+:deep(.account-submit-btn.ant-btn:hover),
+:deep(.account-submit-btn.ant-btn:focus) {
+  border-color: #2a2a2a;
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.account-danger-zone {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.account-danger-desc {
+  margin: -2px 0 10px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.account-danger-btn {
+  border-color: #ff4d4f;
+  background: #fff;
+  color: #ff4d4f;
+}
+
+:deep(.account-danger-btn.ant-btn:hover),
+:deep(.account-danger-btn.ant-btn:focus) {
+  border-color: #ff7875;
+  background: #fff5f5;
+  color: #ff4d4f;
 }
 
 .mini-modal-content {
@@ -1228,6 +1509,10 @@ onBeforeUnmount(() => {
   height: 56px;
   border-radius: 50%;
   object-fit: cover;
+}
+
+.avatar-file-input {
+  display: none;
 }
 
 .avatar-change-btn {
@@ -1348,5 +1633,9 @@ onBeforeUnmount(() => {
     border-color: #2a2a2a;
     color: #fff;
   }
+}
+
+.mini-actions-single {
+  grid-template-columns: 1fr;
 }
 </style>

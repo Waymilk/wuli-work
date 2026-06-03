@@ -6,14 +6,28 @@
           <div ref="scrollContainerRef" class="scroll-container" @scroll="handleScroll">
             <article v-for="item in historyItems" :key="item.taskId" class="history-item">
               <div class="prompt-section">
-                <div v-if="item.inputImages.length" class="input-image-stack" style="--img-count: 1; --stack-count: 1">
-                  <div class="input-image-stack-item" style="--index: 0">
-                    <img class="input-image" :src="item.inputImages[0]" alt="IMAGE1" loading="lazy" decoding="async" />
-                    <img
-                      class="input-image-check-icon"
-                      src="/wuli-generate-assets/O1CN01jL39pm1uM8Dc0zKLu_!!6000000006022-55-tps-18-17.svg"
-                      alt="add-icon"
+                <div
+                  v-if="item.inputImages.length"
+                  class="input-image-stack"
+                  :style="{ '--stack-count': String(item.inputImages.length) }"
+                >
+                  <div
+                    v-for="(src, index) in item.inputImages"
+                    :key="`${item.taskId}-input-${index}-${src}`"
+                    class="input-image-stack-item"
+                    :style="{ '--stack-index': String(index), zIndex: String(index + 1) }"
+                  >
+                    <video
+                      v-if="isVideoUrl(src)"
+                      class="input-image input-video"
+                      :src="src"
+                      muted
+                      playsinline
+                      preload="metadata"
+                      @mouseenter="onInputVideoHoverEnter"
+                      @mouseleave="onInputVideoHoverLeave"
                     />
+                    <img v-else class="input-image" :src="src" :alt="`IMAGE${index + 1}`" loading="lazy" decoding="async" />
                   </div>
                 </div>
 
@@ -290,8 +304,7 @@ const slotCount = (item: GenerateHistoryItem) => {
 
 const pendingTitle = (item: GenerateHistoryItem) => {
   if (item.status === 'FAILED' || item.status === 'CANCELLED') return '生成失败'
-  if (item.resultImages.length > 0) return '继续生成中...'
-  return '生成中...'
+  return item.mediaType === 'VIDEO' ? '生成视频中...' : '生成图片中...'
 }
 
 const pendingProgress = (item: GenerateHistoryItem) => {
@@ -381,6 +394,27 @@ const isPlainPrompt = (item: GenerateHistoryItem) => !renderPromptParts(item).so
 const isVideoUrl = (url: string) => /\.(mp4|webm|mov|m4v|m3u8)(\?|#|$)/i.test(String(url || ''))
 
 const isVideoResult = (item: GenerateHistoryItem, url: string) => item.mediaType === 'VIDEO' || isVideoUrl(url)
+
+const onInputVideoHoverEnter = async (event: Event) => {
+  const target = event.currentTarget as HTMLVideoElement | null
+  if (!target) return
+  try {
+    await target.play()
+  } catch {
+    // noop
+  }
+}
+
+const onInputVideoHoverLeave = (event: Event) => {
+  const target = event.currentTarget as HTMLVideoElement | null
+  if (!target) return
+  target.pause()
+  try {
+    target.currentTime = 0
+  } catch {
+    // noop
+  }
+}
 
 const videoSlotKey = (taskId: string, idx: number) => `${taskId}-${idx}`
 
@@ -609,29 +643,34 @@ onBeforeUnmount(() => {
 }
 
 .input-image-stack {
-  --img-width: 48px;
-  --img-height: 48px;
-  --img-offset: 10px;
-  --img-degree: 10deg;
-  --img-x-offset: 3px;
-  --img-y-offset: 1px;
+  --card-width: 48px;
+  --card-height: 48px;
+  --stack-offset: 10px;
+  --stack-gap: 2px;
   flex-shrink: 0;
-  height: var(--img-height);
+  height: var(--card-height);
   margin-right: 16px;
   position: relative;
-  transition: all 0.3s ease;
-  width: calc(var(--img-width) + var(--img-offset) * (var(--stack-count) - 1));
+  transition: z-index 0.18s ease;
+  width: calc(var(--card-width) + (var(--stack-count) - 1) * var(--stack-offset));
+  z-index: 2;
+
+  &:hover {
+    z-index: 30;
+  }
+
+  &:hover .input-image-stack-item {
+    transform: translateX(calc(var(--stack-index) * (var(--card-width) + var(--stack-gap))));
+  }
 }
 
 .input-image-stack-item {
-  height: var(--img-height);
-  left: 0;
+  height: var(--card-height);
+  inset: 0 auto auto 0;
   position: absolute;
-  transform: translateX(calc(var(--img-x-offset) * 0)) translateY(calc(var(--img-y-offset) * 0 * -1)) rotate(calc(var(--img-degree) * 0));
-  transform-origin: right bottom;
-  transition: all 0.3s ease;
-  width: var(--img-width);
-  z-index: 5;
+  transform: translateX(calc(var(--stack-index) * var(--stack-offset)));
+  transition: transform 0.2s ease;
+  width: var(--card-width);
 }
 
 .input-image {
@@ -641,6 +680,10 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: cover;
   width: 100%;
+}
+
+.input-video {
+  background: #000;
 }
 
 .input-image-check-icon {

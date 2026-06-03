@@ -1,5 +1,11 @@
 <template>
-  <section class="generate-panel">
+  <section
+    class="generate-panel"
+    @dragenter="onPanelDragEnter"
+    @dragover="onPanelDragOver"
+    @dragleave="onPanelDragLeave"
+    @drop="onPanelDrop"
+  >
     <a-tabs :activeKey="mode" type="card" class="gen-tabs" @change="onModeChange" :class="{ 'mini': showMini }">
       <a-tab-pane key="IMAGE">
         <template #tab>
@@ -22,13 +28,16 @@
     <div class="panel-body" :class="{'mini':showMini}">
       <div class="input-row">
         <ReferenceImageUpload
-          :key="referenceUploadRenderKey"
-          :is-video="isVideo"
-          accept="image/*"
-          :max-count="3"
+          v-for="slot in uploadSlots"
+          :key="`${slot.key}-${referenceUploadRenderKey}`"
+          :ref="(instance) => setUploadRef(slot.key, instance)"
+          :is-video="slot.isVideo"
+          :accept="referenceUploadAccept"
+          :max-count="slot.maxCount"
           :disabled="isSubmitting"
-          @file-change="onReferenceFileChange"
-          @upload-result="onReferenceUploadResult"
+          :tag-label="slot.tagLabel"
+          @file-change="onReferenceFileChange(slot.key, $event)"
+          @upload-result="onReferenceUploadResult(slot.key, $event)"
         />
 
         <div class="editor-wrap">
@@ -268,6 +277,10 @@
         <div class="submit-loading-desc">后端处理可能需要约 1 分钟，请稍候</div>
       </div>
     </div>
+
+    <div v-if="isPanelDraggingFile && !isSubmitting" class="panel-drag-mask">
+      <div class="panel-drag-card">拖拽到此处上传</div>
+    </div>
   </section>
 </template>
 
@@ -296,6 +309,10 @@ type VidModelTab = 'txt2video' | 'img2video' | 'vid2video'
 type ModelTabKey = ImgModelTab | VidModelTab
 type PollMode = 'internal' | 'external'
 type ModelsFetchMode = 'explore' | 'cache'
+type UploadSlotKey = 'reference' | 'firstFrame' | 'lastFrame'
+type ReferenceUploadExpose = {
+  uploadFiles: (files: File[]) => number
+}
 
 const props = withDefaults(defineProps<{
   showMini?: boolean
@@ -335,6 +352,9 @@ interface ModelItem {
     numImages: string[]
     resolutions: string[]
     durations: string[]
+    specialFeatures: string[]
+    refImageFormats: string[]
+    maxRefImages?: number
   }
 }
 
@@ -358,6 +378,8 @@ interface VideoTaskPayload {
   resolution?: string
   duration?: string
   image_ids?: number[]
+  first_frame_image_id?: number
+  last_frame_image_id?: number
 }
 
 type TaskCreatePayload = ImageTaskPayload | VideoTaskPayload
@@ -511,9 +533,17 @@ const hasSmartOptions = computed(() => ratioOptions.value.length > 0 || sizeOpti
 const smartLabelText = computed(() => ratioDisplayText(selectedRatio.value || 'auto'))
 const smartPillValues = computed(() => [selectedSize.value, countDisplayText(selectedCount.value)].filter((item) => Boolean(item)))
 const hasPrompt = computed(() => prompt.value.trim().length > 0)
-const isReferenceUploading = ref(false)
-const uploadError = ref('')
-const uploadedImageIds = ref<number[]>([])
+const uploadStates = ref<Record<UploadSlotKey, {
+  files: File[]
+  uploading: boolean
+  error: string
+  imageIds: number[]
+  datasets: UploadResultEventPayload['datasets']
+}>>({
+  reference: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
+  firstFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
+  lastFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
+})
 const generateCost = computed(() => currentModel.value?.costPerGeneration)
 const hasGenerateCost = computed(() => typeof generateCost.value === 'number')
 const showGenerateCost = computed(() => !isSubmitting.value && hasPrompt.value && Boolean(currentModel.value))
@@ -528,17 +558,48 @@ const generateCostText = computed(() => {
 })
 const referenceImageFile = ref<File | null>(null)
 const referenceUploadRenderKey = ref(0)
-const hasReferenceImages = computed(() => uploadedImageIds.value.length > 0)
+const uploadRefs = ref<Partial<Record<UploadSlotKey, ReferenceUploadExpose>>>({})
+const isPanelDraggingFile = ref(false)
+const panelDragDepth = ref(0)
+const baseReferenceState = computed(() => uploadStates.value.reference)
+const firstFrameState = computed(() => uploadStates.value.firstFrame)
+const lastFrameState = computed(() => uploadStates.value.lastFrame)
+const isReferenceUploading = computed(() => uploadSlots.value.some((slot) => uploadStates.value[slot.key].uploading))
+const modelSpecialFeatures = computed(() => currentModel.value?.options.specialFeatures || [])
+const supportsFirstLastFrame = computed(() => modelSpecialFeatures.value.some((item) => item.toLowerCase() === 'first_last_frame'))
+const currentVideoModelSupportsReference = computed(() => isVideo.value && Boolean(currentModel.value?.caps.includes('ref')))
+const shouldShowVideoUploads = computed(() => currentVideoModelSupportsReference.value)
+const referenceUploadAccept = computed(() => formatAcceptFromModelFormats(currentModel.value?.options.refImageFormats || []))
+const imageReferenceMaxCount = computed(() => Math.max(1, currentModel.value?.options.maxRefImages || 3))
+const uploadSlots = computed<Array<{ key: UploadSlotKey; isVideo: boolean; maxCount: number; tagLabel: string }>>(() => {
+  if (!isVideo.value) {
+    return [{ key: 'reference', isVideo: false, maxCount: imageReferenceMaxCount.value, tagLabel: '' }]
+  }
+  if (!shouldShowVideoUploads.value) return []
+  const slots: Array<{ key: UploadSlotKey; isVideo: boolean; maxCount: number; tagLabel: string }> = [
+    { key: 'firstFrame', isVideo: true, maxCount: 1, tagLabel: '首帧' },
+  ]
+  if (supportsFirstLastFrame.value) {
+    slots.push({ key: 'lastFrame', isVideo: true, maxCount: 1, tagLabel: '尾帧' })
+  }
+  slots.push({ key: 'reference', isVideo: true, maxCount: imageReferenceMaxCount.value, tagLabel: '' })
+  return slots
+})
 const needsReferenceForCurrentTask = computed(() => {
-  if (isVideo.value) return videoModelTab.value === 'img2video'
+  if (isVideo.value) return shouldShowVideoUploads.value
   return Boolean(referenceImageFile.value)
+})
+const areRequiredUploadsReady = computed(() => {
+  if (!needsReferenceForCurrentTask.value) return true
+  if (!isVideo.value) return baseReferenceState.value.imageIds.length > 0
+  return requiredUploadSlotKeys().every((key) => uploadStates.value[key].imageIds.length > 0)
 })
 const canGenerate = computed(() => (
   hasPrompt.value
   && Boolean(currentModel.value)
   && !isModelsLoading.value
   && !isReferenceUploading.value
-  && (!needsReferenceForCurrentTask.value || hasReferenceImages.value)
+  && (!needsReferenceForCurrentTask.value || areRequiredUploadsReady.value)
 ))
 const isSubmitting = ref(false)
 const isPolling = ref(false)
@@ -550,10 +611,40 @@ function getPopupContainer(trigger: HTMLElement): HTMLElement {
   return trigger.parentElement || document.body
 }
 
+function setUploadRef(slotKey: UploadSlotKey, instance: unknown) {
+  if (instance) {
+    uploadRefs.value[slotKey] = instance as ReferenceUploadExpose
+    return
+  }
+  delete uploadRefs.value[slotKey]
+}
+
 function clearUploadedImages() {
-  isReferenceUploading.value = false
-  uploadError.value = ''
-  uploadedImageIds.value = []
+  uploadStates.value = {
+    reference: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
+    firstFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
+    lastFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
+  }
+}
+
+function collectUploadedDatasets() {
+  return uploadSlots.value.flatMap((slot) => uploadStates.value[slot.key].datasets || [])
+}
+
+function syncMentionDatasetsFromUploads() {
+  const nextMentionList: MentionDatasetItem[] = collectUploadedDatasets()
+    .filter((item) => item.imageId && item.imageUrl)
+    .map((item) => ({
+      uid: item.uid,
+      imageId: item.imageId || 0,
+      imageUrl: item.imageUrl || '',
+      datasetId: item.datasetId,
+      datasetUrl: item.datasetUrl,
+      label: '图片',
+    }))
+  mentionDatasets.value = nextMentionList
+  pruneMissingMentionTokens(new Set(nextMentionList.map((item) => item.datasetId)))
+  syncPromptFromEditor()
 }
 
 function updateSelectedMentionIds() {
@@ -680,45 +771,143 @@ function onEditorKeydown(event: KeyboardEvent) {
   })
 }
 
-function onReferenceFileChange(payload: UploadFileChangeEventPayload) {
+function onReferenceFileChange(slotKey: UploadSlotKey, payload: UploadFileChangeEventPayload) {
   const firstFile = payload.files?.[0] || payload.file
-  referenceImageFile.value = firstFile || null
+  uploadStates.value[slotKey].files = payload.files || (firstFile ? [firstFile] : [])
+  if (slotKey === 'reference') referenceImageFile.value = firstFile || null
   if (!firstFile) {
-    clearUploadedImages()
-    mentionDatasets.value = []
-    pruneMissingMentionTokens(new Set())
-    syncPromptFromEditor()
+    uploadStates.value[slotKey].uploading = false
+    uploadStates.value[slotKey].error = ''
+    uploadStates.value[slotKey].imageIds = []
+    uploadStates.value[slotKey].datasets = []
+    syncMentionDatasetsFromUploads()
   }
 }
 
-function onReferenceUploadResult(payload: UploadResultEventPayload) {
-  isReferenceUploading.value = payload.uploading
+function onReferenceUploadResult(slotKey: UploadSlotKey, payload: UploadResultEventPayload) {
   const uploadedImages = (payload.datasets || []).filter((item) => item.imageId && item.imageUrl)
-  const nextMentionList: MentionDatasetItem[] = uploadedImages.map((item) => ({
-    uid: item.uid,
-    imageId: item.imageId || 0,
-    imageUrl: item.imageUrl || '',
-    datasetId: item.datasetId,
-    datasetUrl: item.datasetUrl,
-    label: `图片`,
-  }))
-  mentionDatasets.value = nextMentionList
-  pruneMissingMentionTokens(new Set(nextMentionList.map((item) => item.datasetId)))
-  syncPromptFromEditor()
+  uploadStates.value[slotKey].uploading = payload.uploading
+  uploadStates.value[slotKey].datasets = uploadedImages
+  uploadStates.value[slotKey].imageIds = uploadedImages
+    .map((item) => Number(item.imageId))
+    .filter((imageId) => Number.isFinite(imageId) && imageId > 0)
+  syncMentionDatasetsFromUploads()
   if (payload.uploading) {
-    uploadError.value = ''
-    uploadedImageIds.value = []
+    uploadStates.value[slotKey].error = ''
     return
   }
   if (uploadedImages.length) {
-    uploadError.value = ''
-    uploadedImageIds.value = uploadedImages
-      .map((item) => Number(item.imageId))
-      .filter((imageId) => Number.isFinite(imageId) && imageId > 0)
+    uploadStates.value[slotKey].error = ''
     return
   }
-  uploadError.value = payload.error || ''
-  uploadedImageIds.value = []
+  uploadStates.value[slotKey].error = payload.error || ''
+  uploadStates.value[slotKey].imageIds = []
+  uploadStates.value[slotKey].datasets = []
+  syncMentionDatasetsFromUploads()
+}
+
+function hasDraggedFiles(event: DragEvent) {
+  const types = Array.from(event.dataTransfer?.types || [])
+  return types.includes('Files')
+}
+
+function getPanelDropTargetSlot(): UploadSlotKey | null {
+  if (isSubmitting.value) return null
+  if (!uploadSlots.value.length) return null
+  if (!isVideo.value) return uploadSlots.value.some((slot) => slot.key === 'reference') ? 'reference' : null
+  if (uploadSlots.value.some((slot) => slot.key === 'reference')) return 'reference'
+  if (uploadSlots.value.some((slot) => slot.key === 'firstFrame')) return 'firstFrame'
+  return null
+}
+
+function parseAcceptValues(accept: string) {
+  return String(accept || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function fileMatchesAccept(file: File, accept: string) {
+  const values = parseAcceptValues(accept)
+  if (!values.length) return true
+  const fileType = String(file.type || '').toLowerCase()
+  const fileName = String(file.name || '').toLowerCase()
+  return values.some((item) => {
+    if (item === '*/*') return true
+    if (item.endsWith('/*')) return fileType.startsWith(item.slice(0, -1))
+    if (item.startsWith('.')) return fileName.endsWith(item)
+    return fileType === item
+  })
+}
+
+function remainingUploadCount(slotKey: UploadSlotKey) {
+  const slot = uploadSlots.value.find((item) => item.key === slotKey)
+  if (!slot) return 0
+  const state = uploadStates.value[slotKey]
+  return Math.max(0, slot.maxCount - (state.files?.length || 0))
+}
+
+function onPanelDragEnter(event: DragEvent) {
+  if (!hasDraggedFiles(event)) return
+  event.preventDefault()
+  panelDragDepth.value += 1
+  isPanelDraggingFile.value = true
+}
+
+function onPanelDragOver(event: DragEvent) {
+  if (!hasDraggedFiles(event)) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = getPanelDropTargetSlot() ? 'copy' : 'none'
+  isPanelDraggingFile.value = true
+}
+
+function onPanelDragLeave(event: DragEvent) {
+  if (!hasDraggedFiles(event)) return
+  event.preventDefault()
+  panelDragDepth.value = Math.max(0, panelDragDepth.value - 1)
+  if (panelDragDepth.value === 0) {
+    isPanelDraggingFile.value = false
+  }
+}
+
+function onPanelDrop(event: DragEvent) {
+  if (!hasDraggedFiles(event)) return
+  event.preventDefault()
+  panelDragDepth.value = 0
+  isPanelDraggingFile.value = false
+
+  const files = Array.from(event.dataTransfer?.files || []).filter((file) => file instanceof File)
+  if (!files.length) return
+
+  const targetSlot = getPanelDropTargetSlot()
+  if (!targetSlot) {
+    message.warning('当前模型不支持上传参考素材')
+    return
+  }
+
+  const matchedFiles = files.filter((file) => fileMatchesAccept(file, referenceUploadAccept.value))
+  if (!matchedFiles.length) {
+    message.warning('文件格式不支持')
+    return
+  }
+  if (matchedFiles.length < files.length) {
+    message.warning('部分文件格式不支持，已忽略')
+  }
+
+  const remaining = remainingUploadCount(targetSlot)
+  if (remaining <= 0) {
+    message.warning(`最多上传${uploadSlots.value.find((slot) => slot.key === targetSlot)?.maxCount || 1}个文件`)
+    return
+  }
+  const uploadFiles = matchedFiles.slice(0, remaining)
+  if (matchedFiles.length > remaining) {
+    message.warning(`最多上传${uploadSlots.value.find((slot) => slot.key === targetSlot)?.maxCount || remaining}个文件，已忽略多余文件`)
+  }
+
+  const uploadedCount = uploadRefs.value[targetSlot]?.uploadFiles(uploadFiles) || 0
+  if (!uploadedCount) {
+    message.warning('当前上传入口不可用')
+  }
 }
 
 function onSelectMention(item: MentionDatasetItem) {
@@ -756,6 +945,16 @@ function resetComposerInputs() {
   cachedSelection = null
   const root = promptEditorRef.value
   if (root) root.innerHTML = ''
+  clearUploadedImages()
+}
+
+function resetReferenceUploads() {
+  referenceImageFile.value = null
+  referenceUploadRenderKey.value += 1
+  mentionDatasets.value = []
+  selectedMentionIds.value = []
+  pruneMissingMentionTokens(new Set())
+  syncPromptFromEditor()
   clearUploadedImages()
 }
 
@@ -905,12 +1104,16 @@ function normalizeNumImageOptions(value: ModelOptionValue) {
 
 function normalizeModelOptions(config: BackendModelConfig) {
   const numImagesRaw = readRawOption(config, ['num_images'])
+  const maxRefImagesRaw = readRawOption(config, ['max_ref_images'])
   return {
     ratios: dedupeList(readOption(config, ['aspect_ratios', 'aspect_ratio', 'ratios'])),
     imageSizes: dedupeList(readOption(config, ['image_sizes', 'image_size'])),
     numImages: normalizeNumImageOptions(numImagesRaw),
     resolutions: dedupeList(readOption(config, ['resolutions'])),
-    durations: dedupeList(readOption(config, ['durations'])),
+    durations: dedupeList(readOption(config, ['duration_options', 'durations'])),
+    specialFeatures: dedupeList(readOption(config, ['special_features'])),
+    refImageFormats: dedupeList(readOption(config, ['ref_image_formats'])),
+    maxRefImages: normalizePositiveInteger(maxRefImagesRaw),
   }
 }
 
@@ -1145,6 +1348,39 @@ function normalizeNumImages(raw: string) {
   const parsed = Number((raw || '').replace(/[^\d]/g, ''))
   if (!Number.isFinite(parsed) || parsed <= 0) return 4
   return parsed
+}
+
+function normalizePositiveInteger(raw: unknown): number | undefined {
+  const parsed = Number(String(raw ?? '').replace(/[^\d]/g, ''))
+  if (!Number.isInteger(parsed) || parsed <= 0) return undefined
+  return parsed
+}
+
+function formatAcceptFromModelFormats(formats: string[]) {
+  const normalized = formats
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean)
+    .map((item) => {
+      if (item.includes('/')) return item
+      const clean = item.replace(/^\./, '')
+      return clean ? `.${clean}` : ''
+    })
+    .filter(Boolean)
+  return normalized.length ? Array.from(new Set(normalized)).join(',') : 'image/*'
+}
+
+function requiredUploadSlotKeys(): UploadSlotKey[] {
+  if (!isVideo.value) return referenceImageFile.value ? ['reference'] : []
+  if (!shouldShowVideoUploads.value) return []
+  const keys: UploadSlotKey[] = ['reference', 'firstFrame']
+  if (supportsFirstLastFrame.value) keys.push('lastFrame')
+  return keys
+}
+
+function uploadSlotLabel(key: UploadSlotKey) {
+  if (key === 'firstFrame') return '首帧'
+  if (key === 'lastFrame') return '尾帧'
+  return '参考图'
 }
 
 function normalizeImageSize(raw: string) {
@@ -1383,6 +1619,7 @@ function onModeChange(next: string | number) {
   mode.value = resolved
   closeAll()
   ensureCurrentModelAvailable()
+  resetReferenceUploads()
 }
 
 function onRetryLoadModels() {
@@ -1400,11 +1637,13 @@ function setModelTab(key: ModelTabKey) {
     currentModel.value = firstVisible
   }
   applySelectionDefaults()
+  resetReferenceUploads()
 }
 
 function selectModel(modelItem: ModelItem) {
   currentModel.value = modelItem
   applySelectionDefaults()
+  resetReferenceUploads()
   modelOpen.value = false
 }
 
@@ -1438,22 +1677,36 @@ async function onGenerate() {
   try {
     clearPollingTask()
     let createRes: TaskCreateResponse
-    const shouldAttachReference = !isVideoTask
-      ? Boolean(referenceImageFile.value)
-      : videoModelTab.value === 'img2video'
+    const requiredSlots = requiredUploadSlotKeys()
 
-    if (isVideoTask && videoModelTab.value === 'img2video' && !referenceImageFile.value) {
-      throw new Error('请先上传首帧')
+    for (const key of requiredSlots) {
+      const state = uploadStates.value[key]
+      const label = uploadSlotLabel(key)
+      if (state.uploading) {
+        throw new Error(`${label}上传中，请稍候再试`)
+      }
+      if (!state.imageIds.length) {
+        throw new Error(state.error || `请先完成${label}上传`)
+      }
     }
 
-    if (shouldAttachReference) {
-      if (isReferenceUploading.value) {
-        throw new Error('参考图上传中，请稍候再试')
+    if (!isVideoTask && baseReferenceState.value.imageIds.length) {
+      payload.image_ids = [...baseReferenceState.value.imageIds]
+    }
+
+    if (isVideoTask && shouldShowVideoUploads.value) {
+      const videoPayload = payload as VideoTaskPayload
+      if (baseReferenceState.value.imageIds.length) {
+        videoPayload.image_ids = [...baseReferenceState.value.imageIds]
       }
-      if (!uploadedImageIds.value.length) {
-        throw new Error(uploadError.value || '请先完成参考图上传')
+      const firstFrameImageId = firstFrameState.value.imageIds[0]
+      if (firstFrameImageId) {
+        videoPayload.first_frame_image_id = firstFrameImageId
       }
-      payload.image_ids = [...uploadedImageIds.value]
+      const lastFrameImageId = lastFrameState.value.imageIds[0]
+      if (supportsFirstLastFrame.value && lastFrameImageId) {
+        videoPayload.last_frame_image_id = lastFrameImageId
+      }
     }
     createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload, { timeout: 60000 })
 
@@ -1593,6 +1846,34 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 18px;
   color: rgba(0, 0, 0, 0.48);
+}
+
+.panel-drag-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 24px;
+  border: 2px dashed rgba(105, 40, 254, 0.42);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.panel-drag-card {
+  min-width: 220px;
+  padding: 18px 24px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(105, 40, 254, 0.18);
+  box-shadow: 0 18px 50px rgba(105, 40, 254, 0.14);
+  color: #6928fe;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
 }
 
 :deep(.ant-tabs) {
@@ -1740,7 +2021,7 @@ onBeforeUnmount(() => {
 .input-row {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 8px;
 
   .upload-wrapper {
     display: block;
@@ -2327,7 +2608,7 @@ onBeforeUnmount(() => {
 
 .smart-popover-inner {
   background: #fff;
-  width: 320px;
+  width: 334px;
 
   &.is-image {
     // width: 438px;

@@ -44,7 +44,25 @@
           <div class="purchase-card-title">当前积分</div>
           <div class="purchase-card-subtitle">可用于图片/视频生成</div>
           <div class="purchase-credits">{{ displayCredits }}</div>
-          <button type="button" class="purchase-btn purchase-btn-secondary" @click="handleBuyClick">去购买</button>
+          <div class="purchase-buy-action">
+            <div class="purchase-qr-panel">
+              <img v-if="qrCodeUrl" class="purchase-qr-image" :src="qrCodeUrl" alt="充值二维码" />
+              <div v-else class="purchase-qr-empty">
+                {{ isLoadingRechargeInfo ? '二维码加载中' : '暂无二维码' }}
+              </div>
+              <span class="purchase-qr-tip">{{ qrCodeUrl ? '扫码充值' : rechargeInfoError || '可点击按钮跳转充值' }}</span>
+            </div>
+            <a
+              :href="rechargeUrl || undefined"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="purchase-btn purchase-btn-secondary"
+              :class="{ disabled: isLoadingRechargeInfo }"
+              @click="handleBuyClick"
+            >
+              {{ isLoadingRechargeInfo ? '加载中' : '去购买' }}
+            </a>
+          </div>
         </article>
       </div>
 
@@ -54,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import request from '@/utils/request'
 
@@ -81,6 +99,10 @@ const displayCredits = computed(() => {
 
 const redeemCode = ref('')
 const isRedeeming = ref(false)
+const rechargeUrl = ref('')
+const qrCodeUrl = ref('')
+const isLoadingRechargeInfo = ref(false)
+const rechargeInfoError = ref('')
 
 interface RedeemResponse {
   success?: boolean
@@ -88,10 +110,40 @@ interface RedeemResponse {
   balance?: number | string | null
 }
 
+interface RechargeInfoResponse {
+  success?: boolean
+  recharge_url?: string
+  rechargeUrl?: string
+  qr_code_url?: string
+  qrCodeUrl?: string
+  data?: {
+    recharge_url?: string
+    rechargeUrl?: string
+    qr_code_url?: string
+    qrCodeUrl?: string
+  }
+  result?: {
+    recharge_url?: string
+    rechargeUrl?: string
+    qr_code_url?: string
+    qrCodeUrl?: string
+  }
+  message?: string
+  detail?: string
+}
+
 const resolveErrorMessage = (error: unknown, fallback: string) => {
   const maybe = error as { response?: { data?: { detail?: string; message?: string } }; message?: string }
   return maybe?.response?.data?.detail || maybe?.response?.data?.message || maybe?.message || fallback
 }
+
+const pickRechargeUrl = (res: RechargeInfoResponse | undefined) => (
+  res?.recharge_url || res?.rechargeUrl || res?.data?.recharge_url || res?.data?.rechargeUrl || res?.result?.recharge_url || res?.result?.rechargeUrl || ''
+)
+
+const pickQrCodeUrl = (res: RechargeInfoResponse | undefined) => (
+  res?.qr_code_url || res?.qrCodeUrl || res?.data?.qr_code_url || res?.data?.qrCodeUrl || res?.result?.qr_code_url || res?.result?.qrCodeUrl || ''
+)
 
 const handleRedeemClick = async () => {
   if (isRedeeming.value) return
@@ -118,15 +170,52 @@ const handleRedeemClick = async () => {
   }
 }
 
-const handleBuyClick = () => {
-  message.info('购买功能即将上线')
+const loadRechargeInfo = async () => {
+  if (isLoadingRechargeInfo.value) return
+  isLoadingRechargeInfo.value = true
+  rechargeInfoError.value = ''
+  try {
+    const res = await request.get<unknown, RechargeInfoResponse>('/api/recharge/info')
+    if (res?.success === false) {
+      throw new Error(resolveErrorMessage(res, '充值信息加载失败'))
+    }
+    rechargeUrl.value = String(pickRechargeUrl(res)).trim()
+    qrCodeUrl.value = String(pickQrCodeUrl(res)).trim()
+  } catch (error) {
+    rechargeUrl.value = ''
+    qrCodeUrl.value = ''
+    rechargeInfoError.value = resolveErrorMessage(error, '充值信息加载失败')
+    message.error(rechargeInfoError.value)
+  } finally {
+    isLoadingRechargeInfo.value = false
+  }
 }
+
+const handleBuyClick = (event: MouseEvent) => {
+  if (isLoadingRechargeInfo.value) {
+    event.preventDefault()
+    return
+  }
+  if (!rechargeUrl.value) {
+    event.preventDefault()
+    message.warning(rechargeInfoError.value || '充值链接暂不可用')
+  }
+}
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open) {
+      void loadRechargeInfo()
+    }
+  },
+)
 </script>
 
 <style scoped lang="scss">
 :global(.sider-invite-modal .ant-modal-content) {
   border-radius: 16px;
-  overflow: hidden;
+  overflow: visible;
   padding: 14px 20px 20px;
 }
 
@@ -247,16 +336,21 @@ const handleBuyClick = () => {
   border-radius: 8px;
   color: #fff;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 14px;
   font-weight: 600;
   height: 38px;
   margin-top: auto;
   min-width: 108px;
   padding: 0 18px;
+  text-decoration: none;
   transition: all 0.2s ease;
 }
 
-.purchase-btn:disabled {
+.purchase-btn:disabled,
+.purchase-btn.disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
@@ -266,8 +360,61 @@ const handleBuyClick = () => {
   color: rgba(0, 0, 0, 0.75);
 }
 
-.purchase-btn:not(:disabled):hover {
+.purchase-btn:not(:disabled):not(.disabled):hover {
   filter: brightness(1.03);
+}
+
+.purchase-buy-action {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.purchase-buy-action .purchase-btn {
+  margin-top: 0;
+}
+
+.purchase-qr-panel {
+  width: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  position: absolute;
+  top: 91px;
+  right: 35px;
+}
+
+.purchase-qr-empty {
+  width: 108px;
+  height: 108px;
+  border-radius: 6px;
+  background: #fafafd;
+  border: 1px dashed #d9d9de;
+  color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.purchase-qr-image {
+  width: 108px;
+  height: 108px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.purchase-qr-tip {
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
 }
 
 .purchase-credits {
