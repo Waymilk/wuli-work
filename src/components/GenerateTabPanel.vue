@@ -261,6 +261,13 @@
       </div>
     </div>
 
+    <div v-if="isSubmitting" class="submit-loading-mask">
+      <div class="submit-loading-card">
+        <a-spin size="large" />
+        <div class="submit-loading-title">正在提交生成任务</div>
+        <div class="submit-loading-desc">后端处理可能需要约 1 分钟，请稍候</div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -844,6 +851,17 @@ function readOption(config: BackendModelConfig, keys: Array<keyof BackendModelOp
   return []
 }
 
+function readRawOption(config: BackendModelConfig, keys: Array<keyof BackendModelOptions>): ModelOptionValue {
+  const options = config.options || {}
+  for (const key of keys) {
+    const topLevel = config[key] as ModelOptionValue
+    if (topLevel !== null && topLevel !== undefined && toStringList(topLevel).length) return topLevel
+    const nested = options[key] as ModelOptionValue
+    if (nested !== null && nested !== undefined && toStringList(nested).length) return nested
+  }
+  return undefined
+}
+
 function dedupeList(items: string[]) {
   return Array.from(new Set(items.filter((item) => item.length > 0)))
 }
@@ -874,12 +892,23 @@ function expandNumImageOptions(items: string[]) {
   return cleaned.filter((item) => item.length > 0)
 }
 
+function normalizeNumImageOptions(value: ModelOptionValue) {
+  if (Array.isArray(value)) {
+    return dedupeList(
+      value
+        .map((item) => normalizeOptionPrimitive(item))
+        .filter((item) => item.length > 0),
+    )
+  }
+  return dedupeList(expandNumImageOptions(dedupeList(toStringList(value))))
+}
+
 function normalizeModelOptions(config: BackendModelConfig) {
-  const numImagesRaw = dedupeList(readOption(config, ['num_images']))
+  const numImagesRaw = readRawOption(config, ['num_images'])
   return {
     ratios: dedupeList(readOption(config, ['aspect_ratios', 'aspect_ratio', 'ratios'])),
     imageSizes: dedupeList(readOption(config, ['image_sizes', 'image_size'])),
-    numImages: dedupeList(expandNumImageOptions(numImagesRaw)),
+    numImages: normalizeNumImageOptions(numImagesRaw),
     resolutions: dedupeList(readOption(config, ['resolutions'])),
     durations: dedupeList(readOption(config, ['durations'])),
   }
@@ -1426,7 +1455,7 @@ async function onGenerate() {
       }
       payload.image_ids = [...uploadedImageIds.value]
     }
-    createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload)
+    createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload, { timeout: 60000 })
 
     if (!createRes?.success || !createRes?.task_id) {
       throw new Error(getErrorMessage(createRes, '创建任务失败'))
@@ -1521,8 +1550,49 @@ onBeforeUnmount(() => {
   // position: sticky;
   // top: 18px;
   // z-index: 30;
+  position: relative;
   margin-bottom: 18px;
   // background: #fff;
+}
+
+.submit-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(6px);
+  cursor: wait;
+}
+
+.submit-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 220px;
+  padding: 22px 24px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+}
+
+.submit-loading-title {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.submit-loading-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(0, 0, 0, 0.48);
 }
 
 :deep(.ant-tabs) {

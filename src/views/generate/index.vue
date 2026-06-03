@@ -8,7 +8,7 @@
               <div class="prompt-section">
                 <div v-if="item.inputImages.length" class="input-image-stack" style="--img-count: 1; --stack-count: 1">
                   <div class="input-image-stack-item" style="--index: 0">
-                    <img class="input-image" :src="item.inputImages[0]" alt="IMAGE1" />
+                    <img class="input-image" :src="item.inputImages[0]" alt="IMAGE1" loading="lazy" decoding="async" />
                     <img
                       class="input-image-check-icon"
                       src="/wuli-generate-assets/O1CN01jL39pm1uM8Dc0zKLu_!!6000000006022-55-tps-18-17.svg"
@@ -21,7 +21,7 @@
                   <div class="prompt-text">
                     <template v-for="part in renderPromptParts(item)" :key="part.key">
                       <span v-if="part.type === 'dataset'" class="prompt-mention-token">
-                        <img class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" />
+                        <img class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" loading="lazy" decoding="async" />
                         <span class="prompt-mention-label">{{ part.label || '图片' }}</span>
                         
                       </span>
@@ -74,7 +74,14 @@
                       @mouseenter="onVideoHoverEnter($event, item.taskId, slotIndex - 1)"
                       @mouseleave="onVideoHoverLeave($event, item.taskId, slotIndex - 1)"
                     />
-                    <img v-else class="grid-image" :src="item.resultImages[slotIndex - 1]" :alt="`preview-${slotIndex}`" />
+                    <img
+                      v-else
+                      class="grid-image"
+                      :src="item.resultImages[slotIndex - 1]"
+                      :alt="`preview-${slotIndex}`"
+                      loading="lazy"
+                      decoding="async"
+                    />
 
                     <!-- <div class="grid-image-footer-actions">
                       <button
@@ -206,7 +213,7 @@
 import { createFromIconfontCN } from '@ant-design/icons-vue'
 import { message, Skeleton as ASkeleton, Spin as ASpin } from 'ant-design-vue'
 import GenerateTabPanel from '@/components/GenerateTabPanel.vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import InspirationDetailModal, { type InspirationDetailItem } from '@/components/InspirationDetailModal.vue'
 import { useGenerateTasksStore, type GenerateHistoryItem, type GenerateTaskCreatedPayload } from '@/stores/generateTasks'
 
@@ -239,16 +246,22 @@ const historyItems = computed(() => generateTasksStore.items)
 const historyLoading = computed(() => generateTasksStore.historyLoading)
 const historyLoadingMore = computed(() => generateTasksStore.historyLoadingMore)
 // const historyError = computed(() => generateTasksStore.historyError)
+let scrollRafId = 0
+
+const updateScrollState = () => {
+  scrollRafId = 0
+  if (!scrollContainerRef.value) return
+  const { scrollTop, clientHeight, scrollHeight } = scrollContainerRef.value
+  showMini.value = scrollTop + clientHeight < scrollHeight - 1
+  const remain = scrollHeight - (scrollTop + clientHeight)
+  if (remain < 180) {
+    void generateTasksStore.loadHistoryPage(false)
+  }
+}
 
 const handleScroll = () => {
-  if (scrollContainerRef.value) {
-    const { scrollTop, clientHeight, scrollHeight } = scrollContainerRef.value
-    showMini.value = scrollTop + clientHeight < scrollHeight - 1
-    const remain = scrollHeight - (scrollTop + clientHeight)
-    if (remain < 180) {
-      void generateTasksStore.loadHistoryPage(false)
-    }
-  }
+  if (scrollRafId) return
+  scrollRafId = window.requestAnimationFrame(updateScrollState)
 }
 
 const scrollToBottom = () => {
@@ -285,7 +298,7 @@ const pendingProgress = (item: GenerateHistoryItem) => {
   if (item.status === 'FAILED' || item.status === 'CANCELLED') return ''
   if (typeof item.progress !== 'number' || !Number.isFinite(item.progress)) return ''
   const value = Math.max(0, Math.min(100, item.progress))
-  return `${value * 100}%`
+  return `${Math.round(value * 100)}%`
 }
 
 const displayCountLabel = (item: GenerateHistoryItem) => {
@@ -295,9 +308,23 @@ const displayCountLabel = (item: GenerateHistoryItem) => {
   return `${digits}秒`
 }
 
+const promptPartsCache = new Map<string, { signature: string; parts: PromptRenderPart[] }>()
+
+const getPromptPartsSignature = (item: GenerateHistoryItem) => [
+  item.prompt,
+  item.promptDatasets.map((dataset) => `${dataset.datasetId}:${dataset.datasetUrl}:${dataset.label}`).join('|'),
+].join('::')
+
 const renderPromptParts = (item: GenerateHistoryItem): PromptRenderPart[] => {
+  const signature = getPromptPartsSignature(item)
+  const cached = promptPartsCache.get(item.taskId)
+  if (cached?.signature === signature) return cached.parts
+
   const text = String(item.prompt || '')
-  if (!text) return []
+  if (!text) {
+    promptPartsCache.set(item.taskId, { signature, parts: [] })
+    return []
+  }
 
   const datasetsById = new Map((item.promptDatasets || []).map((dataset) => [dataset.datasetId, dataset]))
   const parts: PromptRenderPart[] = []
@@ -344,7 +371,9 @@ const renderPromptParts = (item: GenerateHistoryItem): PromptRenderPart[] => {
     })
   }
 
-  return parts.length ? parts : [{ key: 'text-0', type: 'text', text }]
+  const result: PromptRenderPart[] = parts.length ? parts : [{ key: 'text-0', type: 'text', text }]
+  promptPartsCache.set(item.taskId, { signature, parts: result })
+  return result
 }
 
 const isPlainPrompt = (item: GenerateHistoryItem) => !renderPromptParts(item).some((part) => part.type === 'dataset')
@@ -514,6 +543,13 @@ const copyPrompt = async (text: string) => {
 
 onMounted(() => {
   void generateTasksStore.loadHistoryPage(true)
+})
+
+onBeforeUnmount(() => {
+  if (scrollRafId) {
+    window.cancelAnimationFrame(scrollRafId)
+    scrollRafId = 0
+  }
 })
 </script>
 

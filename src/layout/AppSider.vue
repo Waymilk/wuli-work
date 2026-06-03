@@ -61,7 +61,7 @@
           <template #content>
             <div class="more-popover-menu" @click.stop>
               <button type="button" class="more-popover-item" @click="onMoreMenuAction('agreement')">平台协议</button>
-              <button type="button" class="more-popover-item" @click="onMoreMenuAction('feedback')">问题反馈</button>
+              <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('feedback')">问题反馈</button> -->
               <!-- <div
                 class="more-popover-item with-submenu"
                 @mouseenter="openThemeSubmenu"
@@ -90,7 +90,7 @@
               </div> -->
               <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('experience')">体验优化计划</button> -->
               <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('watermark')">AI生成水印设置</button> -->
-              <button type="button" class="more-popover-item" @click="onMoreMenuAction('account')">账号设置</button>
+              <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('account')">账号设置</button> -->
               <!-- <button type="button" class="more-popover-item" @click="onMoreMenuAction('about')">关于我们</button> -->
               <button v-if="isLoggedIn" type="button" class="more-popover-item" @click="onMoreMenuAction('logout')">退出</button>
             </div>
