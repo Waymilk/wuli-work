@@ -567,7 +567,7 @@ function serializePromptFromEditor() {
   const clone = root.cloneNode(true) as HTMLDivElement
   clone.querySelectorAll<HTMLElement>('.prompt-mention-token').forEach((token) => {
     const datasetId = token.dataset.datasetId || ''
-    const textNode = document.createTextNode(datasetId ? `@{${datasetId}}` : '')
+    const textNode = document.createTextNode(datasetId ? ` @{${datasetId}} ` : '')
     token.replaceWith(textNode)
   })
   const raw = clone.innerText || clone.textContent || ''
