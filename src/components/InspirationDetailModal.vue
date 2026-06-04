@@ -47,7 +47,13 @@
         <div class="detail-info-panel">
           <div class="detail-head">
             <span class="detail-time">{{ item.createdAt }}</span>
-            <button class="info-btn detail-download" type="button" aria-label="下载" @click="item.onDownload?.()">
+            <button
+              class="info-btn detail-download"
+              type="button"
+              aria-label="下载"
+              :disabled="isDownloading"
+              @click="downloadCurrentMedia"
+            >
               <IconFont type="icon-xiazai" />
             </button>
           </div>
@@ -223,6 +229,7 @@ const emit = defineEmits<{
 const activeThumbIndex = ref(0)
 const detailVideoRef = ref<HTMLVideoElement | null>(null)
 const showVideoControls = ref(false)
+const isDownloading = ref(false)
 
 const thumbnailList = computed<InspirationDetailThumbnail[]>(() => {
   if (!props.item) return []
@@ -249,6 +256,51 @@ function isVideoUrl(url: string) {
 function isVideoPromptDataset(dataset: InspirationDetailPromptDataset | undefined) {
   if (!dataset) return false
   return dataset.mediaType === 'video' || dataset.label === '视频' || isVideoUrl(dataset.datasetUrl)
+}
+
+function resolveDownloadFilename(src: string, type: InspirationDetailThumbnail['type']) {
+  try {
+    const url = new URL(src, window.location.href)
+    const lastSegment = url.pathname.split('/').filter(Boolean).pop()
+    if (lastSegment) return decodeURIComponent(lastSegment)
+  } catch {
+    const lastSegment = src.split('?')[0].split('#')[0].split('/').filter(Boolean).pop()
+    if (lastSegment) return lastSegment
+  }
+  return type === 'VIDEO' ? 'wuli-video.mp4' : 'wuli-image.png'
+}
+
+async function downloadCurrentMedia() {
+  if (isDownloading.value) return
+  const media = currentMedia.value
+  const src = String(media.src || '').trim()
+  if (!src) {
+    message.warning('暂无可下载内容')
+    return
+  }
+
+  isDownloading.value = true
+  let objectUrl = ''
+
+  try {
+    const response = await fetch(src)
+    if (!response.ok) throw new Error('download failed')
+    const blob = await response.blob()
+    objectUrl = URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = resolveDownloadFilename(src, media.type)
+    link.rel = 'noopener noreferrer'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  } catch {
+    message.error('下载失败，请重试')
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+    isDownloading.value = false
+  }
 }
 
 const promptParts = computed<PromptRenderPart[]>(() => {

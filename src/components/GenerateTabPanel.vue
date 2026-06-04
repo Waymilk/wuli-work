@@ -1585,13 +1585,10 @@ function formatAcceptFromModelFormats(formats: string[], mediaKind: 'image' | 'v
   return normalized.length ? Array.from(new Set(normalized)).join(',') : `${mediaKind}/*`
 }
 
-function requiredUploadSlotKeys(): UploadSlotKey[] {
-  if (!isVideo.value) return referenceImageFile.value ? ['reference'] : []
-  if (!shouldShowVideoUploads.value) return []
-  if (selectedVideoSettingFeature.value === 'first_frame') return ['firstFrame']
-  if (selectedVideoSettingFeature.value === 'first_last_frame') return ['firstFrame', 'lastFrame']
-  if (selectedVideoSettingFeature.value === 'multimodal_ref') return ['reference', 'videoReference']
-  return []
+function activeUploadingSlotKeys(): UploadSlotKey[] {
+  return uploadSlots.value
+    .map((slot) => slot.key)
+    .filter((key) => uploadStates.value[key].uploading)
 }
 
 function uploadSlotLabel(key: UploadSlotKey) {
@@ -1972,17 +1969,11 @@ async function onGenerate() {
   try {
     clearPollingTask()
     let createRes: TaskCreateResponse
-    const requiredSlots = requiredUploadSlotKeys()
+    const uploadingSlots = activeUploadingSlotKeys()
 
-    for (const key of requiredSlots) {
-      const state = uploadStates.value[key]
+    for (const key of uploadingSlots) {
       const label = uploadSlotLabel(key)
-      if (state.uploading) {
-        throw new Error(`${label}上传中，请稍候再试`)
-      }
-      if (!state.imageIds.length) {
-        throw new Error(state.error || `请先完成${label}上传`)
-      }
+      throw new Error(`${label}上传中，请稍候再试`)
     }
 
     if (!isVideoTask && baseReferenceState.value.imageIds.length) {
