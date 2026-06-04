@@ -35,7 +35,15 @@
                   <div class="prompt-text">
                     <template v-for="part in renderPromptParts(item)" :key="part.key">
                       <span v-if="part.type === 'dataset'" class="prompt-mention-token">
-                        <img class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" loading="lazy" decoding="async" />
+                        <video
+                          v-if="part.mediaType === 'video'"
+                          class="prompt-mention-video"
+                          :src="part.datasetUrl"
+                          muted
+                          playsinline
+                          preload="metadata"
+                        />
+                        <img v-else class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" loading="lazy" decoding="async" />
                         <span class="prompt-mention-label">{{ part.label || '图片' }}</span>
                         
                       </span>
@@ -246,6 +254,7 @@ type PromptRenderPart = {
   text: string
   datasetUrl?: string
   label?: string
+  mediaType?: 'image' | 'video'
 }
 
 const scrollContainerRef = ref<HTMLElement | null>(null)
@@ -325,8 +334,13 @@ const promptPartsCache = new Map<string, { signature: string; parts: PromptRende
 
 const getPromptPartsSignature = (item: GenerateHistoryItem) => [
   item.prompt,
-  item.promptDatasets.map((dataset) => `${dataset.datasetId}:${dataset.datasetUrl}:${dataset.label}`).join('|'),
+  item.promptDatasets.map((dataset) => `${dataset.datasetId}:${dataset.datasetUrl}:${dataset.label}:${dataset.mediaType || ''}`).join('|'),
 ].join('::')
+
+const isVideoPromptDataset = (dataset: { datasetUrl?: string; label?: string; mediaType?: string } | undefined) => {
+  if (!dataset) return false
+  return dataset.mediaType === 'video' || dataset.label === '视频' || isVideoUrl(dataset.datasetUrl || '')
+}
 
 const renderPromptParts = (item: GenerateHistoryItem): PromptRenderPart[] => {
   const signature = getPromptPartsSignature(item)
@@ -357,12 +371,14 @@ const renderPromptParts = (item: GenerateHistoryItem): PromptRenderPart[] => {
     const datasetId = String(match[1] || '').trim()
     const dataset = datasetsById.get(datasetId)
     if (dataset?.datasetUrl) {
+      const mediaType = isVideoPromptDataset(dataset) ? 'video' : 'image'
       parts.push({
         key: `dataset-${match.index}-${datasetId}`,
         type: 'dataset',
         text: match[0],
         datasetUrl: dataset.datasetUrl,
-        label: '图片',
+        label: mediaType === 'video' ? '视频' : '图片',
+        mediaType,
       })
     } else {
       parts.push({
@@ -709,6 +725,7 @@ onBeforeUnmount(() => {
 }
 
 .prompt-text {
+  width: 80%;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   box-sizing: content-box;
@@ -731,7 +748,8 @@ onBeforeUnmount(() => {
   vertical-align: middle;
 }
 
-.prompt-mention-thumb {
+.prompt-mention-thumb,
+.prompt-mention-video {
   border-radius: 4px;
   flex-shrink: 0;
   height: 18px;

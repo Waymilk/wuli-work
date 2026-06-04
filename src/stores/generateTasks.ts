@@ -16,6 +16,7 @@ export interface GeneratePromptDataset {
   datasetId: string
   datasetUrl: string
   label: string
+  mediaType?: 'image' | 'video'
 }
 
 export interface GenerateTaskCreatedPayload {
@@ -213,14 +214,17 @@ function normalizeReferenceImageDatasets(value: unknown): GeneratePromptDataset[
   const datasets: GeneratePromptDataset[] = []
   for (const rawItem of value) {
     if (!rawItem || typeof rawItem !== 'object') continue
-    const item = rawItem as { id?: unknown; url?: unknown }
+    const item = rawItem as { id?: unknown; url?: unknown; label?: unknown; mediaType?: unknown; media_type?: unknown; type?: unknown }
     const datasetId = String(item.id ?? '').trim()
     const datasetUrl = typeof item.url === 'string' ? item.url.trim() : ''
     if (!datasetId || !datasetUrl) continue
+    const rawMediaType = String(item.mediaType ?? item.media_type ?? item.type ?? '').trim().toLowerCase()
+    const mediaType = rawMediaType === 'video' ? 'video' : 'image'
     datasets.push({
       datasetId,
       datasetUrl,
-      label: `图片${datasets.length + 1}`,
+      label: String(item.label || '').trim() || (mediaType === 'video' ? '视频' : '图片'),
+      mediaType,
     })
   }
   return datasets
@@ -248,11 +252,22 @@ function normalizeLegacyReferenceDatasets(params: HistoryParameters): GeneratePr
         dataset_url?: unknown
         datasetUrl?: unknown
         url?: unknown
+        label?: unknown
+        mediaType?: unknown
+        media_type?: unknown
+        type?: unknown
       }
       const datasetId = String(item.dataset_id ?? item.datasetId ?? item.id ?? '').trim()
       const datasetUrl = String(item.dataset_url ?? item.datasetUrl ?? item.url ?? '').trim()
       if (!datasetId || !datasetUrl) continue
-      datasets.push({ datasetId, datasetUrl, label: `图片${datasets.length + 1}` })
+      const rawMediaType = String(item.mediaType ?? item.media_type ?? item.type ?? '').trim().toLowerCase()
+      const mediaType = rawMediaType === 'video' ? 'video' : 'image'
+      datasets.push({
+        datasetId,
+        datasetUrl,
+        label: String(item.label || '').trim() || (mediaType === 'video' ? '视频' : '图片'),
+        mediaType,
+      })
     }
   }
 
@@ -263,7 +278,8 @@ function normalizeLegacyReferenceDatasets(params: HistoryParameters): GeneratePr
     datasets.push({
       datasetId: ids[index],
       datasetUrl: urls[index],
-      label: `图片${datasets.length + 1}`,
+      label: '图片',
+      mediaType: 'image',
     })
   }
   return datasets
@@ -278,7 +294,8 @@ function dedupePromptDatasets(datasets: GeneratePromptDataset[]): GeneratePrompt
     seen.add(key)
     result.push({
       ...item,
-      label: `图片${result.length + 1}`,
+      label: item.mediaType === 'video' || item.label === '视频' ? '视频' : '图片',
+      mediaType: item.mediaType === 'video' || item.label === '视频' ? 'video' : 'image',
     })
   }
   return result

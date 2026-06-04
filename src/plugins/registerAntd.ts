@@ -17,6 +17,7 @@ import {
   Space,
   Spin,
   Tabs,
+  Tooltip,
   RangePicker,
   Form,
   Upload,
@@ -41,6 +42,7 @@ export const registerAntd = (app: App) => {
 
   register(app, 'APopover', Popover)
   register(app, 'APopconfirm', Popconfirm)
+  register(app, 'ATooltip', Tooltip)
   register(app, 'ADropdown', Dropdown)
   register(app, 'AMenu', Menu)
   register(app, 'AMenuItem', Menu.Item)

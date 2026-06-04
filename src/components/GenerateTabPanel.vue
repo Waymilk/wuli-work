@@ -32,7 +32,7 @@
           :key="`${slot.key}-${referenceUploadRenderKey}`"
           :ref="(instance) => setUploadRef(slot.key, instance)"
           :is-video="slot.isVideo"
-          :accept="referenceUploadAccept"
+          :accept="slot.accept"
           :max-count="slot.maxCount"
           :disabled="isSubmitting"
           :tag-label="slot.tagLabel"
@@ -106,15 +106,21 @@
                         <span class="tag">{{ modelItem.vendor }}</span>
                       </div>
                       <div v-if="modelItem.desc" class="desc">{{ modelItem.desc }}</div>
-                      <div v-if="modelItem.tags?.length" class="cap-tags">
+                      <div v-if="modelCapTags(modelItem).length" class="cap-tags">
                         <span
-                          v-for="tag in modelItem.tags"
-                          :key="tag"
+                          v-for="tag in modelCapTags(modelItem)"
+                          :key="tag.key"
                           class="cap-tag"
                           :class="{ selected: isCapTagSelected(tag) }"
                         >
-                          <IconFont :type="capTagIcon(tag)" class="cap-tag-icon" />
-                          <span>{{ tag }}</span>
+                          <img
+                            v-if="tag.iconSrc"
+                            class="cap-tag-svg"
+                            :src="tag.iconSrc"
+                            :alt="tag.label"
+                          />
+                          <IconFont v-else :type="capTagIcon(tag.label)" class="cap-tag-icon" />
+                          <span>{{ tag.label }}</span>
                         </span>
                       </div>
                     </div>
@@ -131,6 +137,44 @@
               <IconFont type="icon-down" class="arrow" />
             </button>
           </a-popover>
+
+          <a-select
+            v-if="isVideo"
+            v-model:value="selectedVideoSettingFeature"
+            class="setting"
+            popupClassName="video-setting-dropdown"
+            @change="onVideoSettingChange"
+          >
+            <a-select-option
+              v-for="option in videoSettingOptions"
+              :key="option.value"
+              :value="option.value"
+              :label="option.label"
+              :class="{ 'video-setting-disabled-option': option.disabled }"
+            >
+              <a-tooltip
+                v-if="option.disabled"
+                title="请切换支持该功能的模型后使用"
+                placement="right"
+              >
+                <span class="video-setting-option disabled">
+                  <img class="video-setting-icon" :src="option.icon" :alt="option.label" />
+                  <span>{{ option.label }}</span>
+                </span>
+              </a-tooltip>
+              <span v-else class="video-setting-option">
+                <img class="video-setting-icon" :src="option.icon" :alt="option.label" />
+                <span>{{ option.label }}</span>
+              </span>
+            </a-select-option>
+            <template #optionLabel="{ label, value }">
+              <span class="video-setting-option selected">
+                <img class="video-setting-icon" :src="videoSettingIconByValue(String(value))" :alt="String(label)" />
+                <span>{{ label }}</span>
+              </span>
+            </template>
+            <template #suffixIcon><IconFont type="icon-down" class="arrow" /></template>
+          </a-select>
 
           <a-popover
             v-model:open="smartOpen"
@@ -221,14 +265,22 @@
               <div class="at-popover-inner">
                 <div v-if="mentionDatasets.length" class="at-list">
                   <button
-                    v-for="(item, index) in mentionDatasets"
+                    v-for="item in mentionDatasets"
                     :key="item.uid"
                     type="button"
                     class="at-list-item"
                     @click="onSelectMention(item)"
                   >
-                    <img class="at-list-thumb" :src="item.datasetUrl" :alt="item.label" />
-                    <span class="at-list-text">{{ `${item.label}${index + 1}` }}</span>
+                    <video
+                      v-if="item.mediaType === 'video'"
+                      class="at-list-thumb"
+                      :src="item.datasetUrl"
+                      muted
+                      playsinline
+                      preload="metadata"
+                    />
+                    <img v-else class="at-list-thumb" :src="item.datasetUrl" :alt="item.label" />
+                    <span class="at-list-text">{{ item.mediaType === 'video' ? '视频' : '图片' }}</span>
                   </button>
                 </div>
                 <a-empty v-else description="暂无图片或视频" />
@@ -247,25 +299,29 @@
             <span>翻译</span>
           </a-button> -->
 
-          <a-button
-            type="primary"
-            class="generate"
-            :class="{ 'has-cost': showGenerateCost }"
-            :loading="isSubmitting"
-            :disabled="!canGenerate || isSubmitting"
-            @click="onGenerate"
-          >
-            <transition name="generate-label" mode="out-in">
-              <span :key="generateButtonLabelKey" class="generate-label-wrap">
-                <span v-if="isSubmitting">提交中</span>
-                <span v-else-if="showGenerateCost" class="generate-cost">
-                  <img :src="creditsIcon" alt="积分" class="credits-icon" />
-                  <span>{{ generateCostText }}</span>
-                </span>
-                <span v-else>生成</span>
-              </span>
-            </transition>
-          </a-button>
+          <a-tooltip :title="generateTooltipTitle" placement="top">
+            <span class="generate-tooltip-wrap">
+              <a-button
+                type="primary"
+                class="generate"
+                :class="{ 'has-cost': showGenerateCost }"
+                :loading="isSubmitting"
+                :disabled="isGenerateButtonDisabled"
+                @click="onGenerate"
+              >
+                <transition name="generate-label" mode="out-in">
+                  <span :key="generateButtonLabelKey" class="generate-label-wrap">
+                    <span v-if="isSubmitting">提交中</span>
+                    <span v-else-if="showGenerateCost" class="generate-cost">
+                      <img :src="creditsIcon" alt="积分" class="credits-icon" />
+                      <span>{{ generateCostText }}</span>
+                    </span>
+                    <span v-else>生成</span>
+                  </span>
+                </transition>
+              </a-button>
+            </span>
+          </a-tooltip>
         </div>
       </div>
     </div>
@@ -285,7 +341,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { createFromIconfontCN } from '@ant-design/icons-vue'
 import request from '@/utils/request'
@@ -309,8 +365,12 @@ type VidModelTab = 'txt2video' | 'img2video' | 'vid2video'
 type ModelTabKey = ImgModelTab | VidModelTab
 type PollMode = 'internal' | 'external'
 type ModelsFetchMode = 'explore' | 'cache'
-type UploadSlotKey = 'reference' | 'firstFrame' | 'lastFrame'
+type UploadSlotKey = 'reference' | 'videoReference' | 'firstFrame' | 'lastFrame'
+type VideoSettingFeature = 'first_frame' | 'first_last_frame' | 'multimodal_ref'
+type UploadSlotConfig = { key: UploadSlotKey; isVideo: boolean; maxCount: number; tagLabel: string; accept: string }
+type CapTagItem = { key: string; label: string; feature?: VideoSettingFeature; iconSrc?: string }
 type ReferenceUploadExpose = {
+  clearAll: () => void
   uploadFiles: (files: File[]) => number
 }
 
@@ -396,7 +456,7 @@ interface TaskCreatedEventPayload {
     countLabel: string
   }
   inputImages?: string[]
-  promptDatasets?: Array<{ datasetId: string; datasetUrl: string; label: string }>
+  promptDatasets?: Array<{ datasetId: string; datasetUrl: string; label: string; mediaType?: 'image' | 'video' }>
   expectedCount: number
 }
 
@@ -436,6 +496,7 @@ interface MentionDatasetItem {
   datasetId: string
   datasetUrl: string
   label: string
+  mediaType: 'image' | 'video'
 }
 
 interface TaskArtifact {
@@ -466,6 +527,11 @@ const VIDEO_ICON  = 'https://img.alicdn.com/imgextra/i4/O1CN01ynewsn217CdigVvUG_
 const VIDEO_SELECTED_ICON = 'https://img.alicdn.com/imgextra/i1/O1CN01ADDbzu1mKk75ZHjet_!!6000000004936-55-tps-16-16.svg'
 const QWEN_ICON = 'https://img.alicdn.com/imgextra/i1/O1CN019kduFV1WbCTG2RP8P_!!6000000002806-55-tps-16-16.svg'
 const VIDEO_MODEL_ICON = 'https://img.alicdn.com/imgextra/i2/O1CN01CHQQzM1otcX7xR6gM_!!6000000005278-55-tps-16-16.svg'
+const VIDEO_SETTING_FEATURES: Array<{ value: VideoSettingFeature; label: string; icon: string }> = [
+  { value: 'first_frame', label: '首帧', icon: '/wuli-icons/model-settings/first-frame.svg' },
+  { value: 'first_last_frame', label: '首尾帧', icon: '/wuli-icons/model-settings/first-last-frame.svg' },
+  { value: 'multimodal_ref', label: '全能参考', icon: '/wuli-icons/model-settings/omni-reference.svg' },
+]
 
 const mode = ref<ModeKey>('IMAGE')
 const prompt = ref('')
@@ -480,6 +546,8 @@ const atOpen = ref(false)
 
 const imageModelTab = ref<ImgModelTab>('txt2img')
 const videoModelTab = ref<VidModelTab>('txt2video')
+const selectedVideoSettingFeature = ref<VideoSettingFeature>('first_frame')
+const lastEnabledVideoSettingFeature = ref<VideoSettingFeature>('first_frame')
 
 const selectedRatio = ref('auto')
 const selectedSize = ref('')
@@ -532,7 +600,7 @@ const countOptions = computed(() => (isVideo.value
 const hasSmartOptions = computed(() => ratioOptions.value.length > 0 || sizeOptions.value.length > 0 || countOptions.value.length > 0)
 const smartLabelText = computed(() => ratioDisplayText(selectedRatio.value || 'auto'))
 const smartPillValues = computed(() => [selectedSize.value, countDisplayText(selectedCount.value)].filter((item) => Boolean(item)))
-const hasPrompt = computed(() => prompt.value.trim().length > 0)
+const hasPrompt = computed(() => hasDescriptionText(prompt.value))
 const uploadStates = ref<Record<UploadSlotKey, {
   files: File[]
   uploading: boolean
@@ -541,6 +609,7 @@ const uploadStates = ref<Record<UploadSlotKey, {
   datasets: UploadResultEventPayload['datasets']
 }>>({
   reference: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
+  videoReference: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
   firstFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
   lastFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
 })
@@ -562,45 +631,51 @@ const uploadRefs = ref<Partial<Record<UploadSlotKey, ReferenceUploadExpose>>>({}
 const isPanelDraggingFile = ref(false)
 const panelDragDepth = ref(0)
 const baseReferenceState = computed(() => uploadStates.value.reference)
+const videoReferenceState = computed(() => uploadStates.value.videoReference)
 const firstFrameState = computed(() => uploadStates.value.firstFrame)
 const lastFrameState = computed(() => uploadStates.value.lastFrame)
-const isReferenceUploading = computed(() => uploadSlots.value.some((slot) => uploadStates.value[slot.key].uploading))
 const modelSpecialFeatures = computed(() => currentModel.value?.options.specialFeatures || [])
-const supportsFirstLastFrame = computed(() => modelSpecialFeatures.value.some((item) => item.toLowerCase() === 'first_last_frame'))
-const currentVideoModelSupportsReference = computed(() => isVideo.value && Boolean(currentModel.value?.caps.includes('ref')))
-const shouldShowVideoUploads = computed(() => currentVideoModelSupportsReference.value)
-const referenceUploadAccept = computed(() => formatAcceptFromModelFormats(currentModel.value?.options.refImageFormats || []))
+const normalizedModelSpecialFeatures = computed(() => new Set(
+  modelSpecialFeatures.value.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean),
+))
+const videoSettingOptions = computed(() => VIDEO_SETTING_FEATURES.map((option) => ({
+  ...option,
+  disabled: !normalizedModelSpecialFeatures.value.has(option.value),
+})))
+const firstEnabledVideoSettingOption = computed(() => videoSettingOptions.value.find((option) => !option.disabled))
+const shouldShowVideoUploads = computed(() => isVideo.value && Boolean(currentModel.value) && videoSettingOptions.value.some((option) => !option.disabled))
+const imageReferenceUploadAccept = computed(() => formatAcceptFromModelFormats(currentModel.value?.options.refImageFormats || [], 'image'))
+const videoReferenceUploadAccept = computed(() => formatAcceptFromModelFormats(currentModel.value?.options.refImageFormats || [], 'video'))
 const imageReferenceMaxCount = computed(() => Math.max(1, currentModel.value?.options.maxRefImages || 3))
-const uploadSlots = computed<Array<{ key: UploadSlotKey; isVideo: boolean; maxCount: number; tagLabel: string }>>(() => {
+const uploadSlots = computed<UploadSlotConfig[]>(() => {
   if (!isVideo.value) {
-    return [{ key: 'reference', isVideo: false, maxCount: imageReferenceMaxCount.value, tagLabel: '' }]
+    return [{ key: 'reference', isVideo: false, maxCount: imageReferenceMaxCount.value, tagLabel: '', accept: imageReferenceUploadAccept.value }]
   }
   if (!shouldShowVideoUploads.value) return []
-  const slots: Array<{ key: UploadSlotKey; isVideo: boolean; maxCount: number; tagLabel: string }> = [
-    { key: 'firstFrame', isVideo: true, maxCount: 1, tagLabel: '首帧' },
-  ]
-  if (supportsFirstLastFrame.value) {
-    slots.push({ key: 'lastFrame', isVideo: true, maxCount: 1, tagLabel: '尾帧' })
+  if (selectedVideoSettingFeature.value === 'first_frame') {
+    return [{ key: 'firstFrame', isVideo: true, maxCount: 1, tagLabel: '首帧', accept: imageReferenceUploadAccept.value }]
   }
-  slots.push({ key: 'reference', isVideo: true, maxCount: imageReferenceMaxCount.value, tagLabel: '' })
-  return slots
-})
-const needsReferenceForCurrentTask = computed(() => {
-  if (isVideo.value) return shouldShowVideoUploads.value
-  return Boolean(referenceImageFile.value)
-})
-const areRequiredUploadsReady = computed(() => {
-  if (!needsReferenceForCurrentTask.value) return true
-  if (!isVideo.value) return baseReferenceState.value.imageIds.length > 0
-  return requiredUploadSlotKeys().every((key) => uploadStates.value[key].imageIds.length > 0)
+  if (selectedVideoSettingFeature.value === 'first_last_frame') {
+    return [
+      { key: 'firstFrame', isVideo: true, maxCount: 1, tagLabel: '首帧', accept: imageReferenceUploadAccept.value },
+      { key: 'lastFrame', isVideo: true, maxCount: 1, tagLabel: '尾帧', accept: imageReferenceUploadAccept.value },
+    ]
+  }
+  if (selectedVideoSettingFeature.value === 'multimodal_ref') {
+    return [
+      { key: 'reference', isVideo: false, maxCount: imageReferenceMaxCount.value, tagLabel: '图片', accept: imageReferenceUploadAccept.value },
+      { key: 'videoReference', isVideo: true, maxCount: 1, tagLabel: '视频', accept: videoReferenceUploadAccept.value },
+    ]
+  }
+  return []
 })
 const canGenerate = computed(() => (
   hasPrompt.value
   && Boolean(currentModel.value)
   && !isModelsLoading.value
-  && !isReferenceUploading.value
-  && (!needsReferenceForCurrentTask.value || areRequiredUploadsReady.value)
 ))
+const isGenerateButtonDisabled = computed(() => !canGenerate.value || isSubmitting.value)
+const generateTooltipTitle = computed(() => (!hasPrompt.value ? '请输入描述内容' : ''))
 const isSubmitting = ref(false)
 const isPolling = ref(false)
 const currentTaskId = ref<string | null>(null)
@@ -609,6 +684,10 @@ const pollAbortFlag = ref(false)
 
 function getPopupContainer(trigger: HTMLElement): HTMLElement {
   return trigger.parentElement || document.body
+}
+
+function hasDescriptionText(value: string) {
+  return value.replace(/@?\{[^{}]+\}/g, '').trim().length > 0
 }
 
 function setUploadRef(slotKey: UploadSlotKey, instance: unknown) {
@@ -622,17 +701,50 @@ function setUploadRef(slotKey: UploadSlotKey, instance: unknown) {
 function clearUploadedImages() {
   uploadStates.value = {
     reference: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
+    videoReference: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
     firstFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
     lastFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
   }
 }
 
-function collectUploadedDatasets() {
-  return uploadSlots.value.flatMap((slot) => uploadStates.value[slot.key].datasets || [])
+function resetUploadStateBySlot(slotKey: UploadSlotKey) {
+  uploadStates.value[slotKey] = { files: [], uploading: false, error: '', imageIds: [], datasets: [] }
+  if (slotKey === 'reference') referenceImageFile.value = null
+}
+
+function clearUploadSlot(slotKey: UploadSlotKey) {
+  uploadRefs.value[slotKey]?.clearAll()
+  resetUploadStateBySlot(slotKey)
+}
+
+function currentSupportedUploadSlotKeys() {
+  return new Set(uploadSlots.value.map((slot) => slot.key))
+}
+
+function pruneUploadsForCurrentModel() {
+  const supportedKeys = currentSupportedUploadSlotKeys()
+  ;(['reference', 'videoReference', 'firstFrame', 'lastFrame'] as UploadSlotKey[]).forEach((slotKey) => {
+    if (!supportedKeys.has(slotKey)) {
+      clearUploadSlot(slotKey)
+    }
+  })
+  syncMentionDatasetsFromUploads()
+}
+
+function collectMentionDatasets() {
+  const mentionSlotKeys: Array<{ key: UploadSlotKey; mediaType: 'image' | 'video' }> = [
+    { key: 'reference', mediaType: 'image' },
+    { key: 'videoReference', mediaType: 'video' },
+  ]
+  const visibleSlotKeys = currentSupportedUploadSlotKeys()
+  return mentionSlotKeys.flatMap(({ key, mediaType }) => {
+    if (!visibleSlotKeys.has(key)) return []
+    return (uploadStates.value[key].datasets || []).map((item) => ({ ...item, mediaType }))
+  })
 }
 
 function syncMentionDatasetsFromUploads() {
-  const nextMentionList: MentionDatasetItem[] = collectUploadedDatasets()
+  const nextMentionList: MentionDatasetItem[] = collectMentionDatasets()
     .filter((item) => item.imageId && item.imageUrl)
     .map((item) => ({
       uid: item.uid,
@@ -640,7 +752,8 @@ function syncMentionDatasetsFromUploads() {
       imageUrl: item.imageUrl || '',
       datasetId: item.datasetId,
       datasetUrl: item.datasetUrl,
-      label: '图片',
+      label: item.mediaType === 'video' ? '视频' : '图片',
+      mediaType: item.mediaType,
     }))
   mentionDatasets.value = nextMentionList
   pruneMissingMentionTokens(new Set(nextMentionList.map((item) => item.datasetId)))
@@ -730,11 +843,21 @@ function createMentionTokenNode(item: MentionDatasetItem) {
   token.dataset.datasetId = item.datasetId
   token.dataset.uid = item.uid
 
-  const img = document.createElement('img')
-  img.className = 'prompt-mention-thumb'
-  img.src = item.datasetUrl
-  img.alt = item.label
-  token.appendChild(img)
+  if (item.mediaType === 'video') {
+    const video = document.createElement('video')
+    video.className = 'prompt-mention-video'
+    video.src = item.datasetUrl
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'metadata'
+    token.appendChild(video)
+  } else {
+    const img = document.createElement('img')
+    img.className = 'prompt-mention-thumb'
+    img.src = item.datasetUrl
+    img.alt = item.label
+    token.appendChild(img)
+  }
 
   const text = document.createElement('span')
   text.className = 'prompt-mention-label'
@@ -811,11 +934,16 @@ function hasDraggedFiles(event: DragEvent) {
   return types.includes('Files')
 }
 
-function getPanelDropTargetSlot(): UploadSlotKey | null {
+function getPanelDropTargetSlot(file?: File): UploadSlotKey | null {
   if (isSubmitting.value) return null
   if (!uploadSlots.value.length) return null
   if (!isVideo.value) return uploadSlots.value.some((slot) => slot.key === 'reference') ? 'reference' : null
-  if (uploadSlots.value.some((slot) => slot.key === 'reference')) return 'reference'
+  if (selectedVideoSettingFeature.value === 'multimodal_ref') {
+    if (file && fileMatchesAccept(file, videoReferenceUploadAccept.value) && uploadSlots.value.some((slot) => slot.key === 'videoReference')) {
+      return 'videoReference'
+    }
+    if (uploadSlots.value.some((slot) => slot.key === 'reference')) return 'reference'
+  }
   if (uploadSlots.value.some((slot) => slot.key === 'firstFrame')) return 'firstFrame'
   return null
 }
@@ -857,7 +985,8 @@ function onPanelDragEnter(event: DragEvent) {
 function onPanelDragOver(event: DragEvent) {
   if (!hasDraggedFiles(event)) return
   event.preventDefault()
-  if (event.dataTransfer) event.dataTransfer.dropEffect = getPanelDropTargetSlot() ? 'copy' : 'none'
+  const firstFile = event.dataTransfer?.files?.[0]
+  if (event.dataTransfer) event.dataTransfer.dropEffect = getPanelDropTargetSlot(firstFile) ? 'copy' : 'none'
   isPanelDraggingFile.value = true
 }
 
@@ -879,13 +1008,57 @@ function onPanelDrop(event: DragEvent) {
   const files = Array.from(event.dataTransfer?.files || []).filter((file) => file instanceof File)
   if (!files.length) return
 
-  const targetSlot = getPanelDropTargetSlot()
+  if (isVideo.value && selectedVideoSettingFeature.value === 'multimodal_ref') {
+    const imageTarget = uploadSlots.value.find((slot) => slot.key === 'reference')
+    const videoTarget = uploadSlots.value.find((slot) => slot.key === 'videoReference')
+    if (!imageTarget && !videoTarget) {
+      message.warning('当前模型不支持上传参考素材')
+      return
+    }
+
+    const imageFiles = imageTarget ? files.filter((file) => fileMatchesAccept(file, imageTarget.accept)) : []
+    const videoFiles = videoTarget ? files.filter((file) => fileMatchesAccept(file, videoTarget.accept)) : []
+    const acceptedFileSet = new Set([...imageFiles, ...videoFiles])
+    if (!acceptedFileSet.size) {
+      message.warning('文件格式不支持')
+      return
+    }
+    if (acceptedFileSet.size < files.length) {
+      message.warning('部分文件格式不支持，已忽略')
+    }
+
+    let uploadedTotal = 0
+    const uploadToSlot = (slotKey: UploadSlotKey, slotFiles: File[]) => {
+      if (!slotFiles.length) return
+      const remaining = remainingUploadCount(slotKey)
+      if (remaining <= 0) {
+        message.warning(`最多上传${uploadSlots.value.find((slot) => slot.key === slotKey)?.maxCount || 1}个文件`)
+        return
+      }
+      const accepted = slotFiles.slice(0, remaining)
+      if (slotFiles.length > remaining) {
+        message.warning(`最多上传${uploadSlots.value.find((slot) => slot.key === slotKey)?.maxCount || remaining}个文件，已忽略多余文件`)
+      }
+      uploadedTotal += uploadRefs.value[slotKey]?.uploadFiles(accepted) || 0
+    }
+
+    uploadToSlot('reference', imageFiles)
+    uploadToSlot('videoReference', videoFiles)
+    if (!uploadedTotal) {
+      message.warning('当前上传入口不可用')
+    }
+    return
+  }
+
+  const targetSlot = getPanelDropTargetSlot(files[0])
   if (!targetSlot) {
     message.warning('当前模型不支持上传参考素材')
     return
   }
 
-  const matchedFiles = files.filter((file) => fileMatchesAccept(file, referenceUploadAccept.value))
+  const targetConfig = uploadSlots.value.find((slot) => slot.key === targetSlot)
+  const targetAccept = targetConfig?.accept || imageReferenceUploadAccept.value
+  const matchedFiles = files.filter((file) => fileMatchesAccept(file, targetAccept))
   if (!matchedFiles.length) {
     message.warning('文件格式不支持')
     return
@@ -967,6 +1140,7 @@ function buildPromptDatasetsForEmit() {
     datasetId: item.datasetId,
     datasetUrl: item.datasetUrl,
     label: item.label,
+    mediaType: item.mediaType,
   }))
 }
 
@@ -1356,30 +1530,43 @@ function normalizePositiveInteger(raw: unknown): number | undefined {
   return parsed
 }
 
-function formatAcceptFromModelFormats(formats: string[]) {
+function isVideoFormatValue(value: string) {
+  return /video|mp4|mov|webm|m4v|m3u8|avi|mkv/i.test(value)
+}
+
+function isImageFormatValue(value: string) {
+  return /image|jpg|jpeg|png|webp|gif|bmp|heic|heif/i.test(value)
+}
+
+function formatAcceptFromModelFormats(formats: string[], mediaKind: 'image' | 'video' = 'image') {
   const normalized = formats
     .map((item) => String(item || '').trim().toLowerCase())
     .filter(Boolean)
+    .filter((item) => mediaKind === 'video' ? isVideoFormatValue(item) : isImageFormatValue(item))
     .map((item) => {
       if (item.includes('/')) return item
       const clean = item.replace(/^\./, '')
+      if (clean === 'video') return 'video/*'
+      if (clean === 'image') return 'image/*'
       return clean ? `.${clean}` : ''
     })
     .filter(Boolean)
-  return normalized.length ? Array.from(new Set(normalized)).join(',') : 'image/*'
+  return normalized.length ? Array.from(new Set(normalized)).join(',') : `${mediaKind}/*`
 }
 
 function requiredUploadSlotKeys(): UploadSlotKey[] {
   if (!isVideo.value) return referenceImageFile.value ? ['reference'] : []
   if (!shouldShowVideoUploads.value) return []
-  const keys: UploadSlotKey[] = ['reference', 'firstFrame']
-  if (supportsFirstLastFrame.value) keys.push('lastFrame')
-  return keys
+  if (selectedVideoSettingFeature.value === 'first_frame') return ['firstFrame']
+  if (selectedVideoSettingFeature.value === 'first_last_frame') return ['firstFrame', 'lastFrame']
+  if (selectedVideoSettingFeature.value === 'multimodal_ref') return ['reference', 'videoReference']
+  return []
 }
 
 function uploadSlotLabel(key: UploadSlotKey) {
   if (key === 'firstFrame') return '首帧'
   if (key === 'lastFrame') return '尾帧'
+  if (key === 'videoReference') return '视频参考'
   return '参考图'
 }
 
@@ -1564,6 +1751,40 @@ function ratioDisplayText(ratio: string) {
   return ratio.toLowerCase() === 'auto' ? '智能' : ratio
 }
 
+function isVideoSettingFeature(value: string): value is VideoSettingFeature {
+  return VIDEO_SETTING_FEATURES.some((option) => option.value === value)
+}
+
+function specialFeatureCapTags(modelItem: ModelItem): CapTagItem[] {
+  if (mode.value !== 'VIDEO') return []
+  return modelItem.options.specialFeatures
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(isVideoSettingFeature)
+    .flatMap((feature) => {
+      const option = VIDEO_SETTING_FEATURES.find((item) => item.value === feature)
+      return option
+        ? [{ key: `feature-${feature}`, label: option.label, feature, iconSrc: option.icon }]
+        : []
+    })
+}
+
+function modelCapTags(modelItem: ModelItem): CapTagItem[] {
+  const tags: CapTagItem[] = []
+  const seenLabels = new Set<string>()
+  const pushTag = (tag: CapTagItem) => {
+    const labelKey = tag.label.trim()
+    if (!labelKey || seenLabels.has(labelKey)) return
+    seenLabels.add(labelKey)
+    tags.push(tag)
+  }
+
+  ;(modelItem.tags || []).forEach((label) => {
+    pushTag({ key: `tag-${label}`, label })
+  })
+  specialFeatureCapTags(modelItem).forEach(pushTag)
+  return tags
+}
+
 function capTagIcon(tag: string) {
   if (tag.includes('参考')) return 'icon-zuoweicankaotu'
   if (tag.includes('图生')) return 'icon-a-Outlined-'
@@ -1571,15 +1792,17 @@ function capTagIcon(tag: string) {
   return 'icon-Outlined-wensheng'
 }
 
-function isCapTagSelected(tag: string) {
+function isCapTagSelected(tag: CapTagItem) {
+  if (tag.feature) return tag.feature === selectedVideoSettingFeature.value
+  const label = tag.label
   if (mode.value === 'IMAGE') {
     return imageModelTab.value === 'txt2img'
-      ? tag.includes('文生图') || tag.includes('文本') || tag.includes('文生')
-      : tag.includes('参考生图') || tag.includes('图生') || tag.includes('首帧') || tag.includes('全能参考')
+      ? label.includes('文生图') || label.includes('文本') || label.includes('文生')
+      : label.includes('参考生图') || label.includes('图生') || label.includes('首帧') || label.includes('全能参考')
   }
-  if (videoModelTab.value === 'txt2video') return tag.includes('文生视频') || tag.includes('文本') || tag.includes('文生')
-  if (videoModelTab.value === 'img2video') return tag.includes('图生视频') || tag.includes('图生') || tag.includes('首帧') || tag.includes('全能参考')
-  return tag.includes('视频生视频')
+  if (videoModelTab.value === 'txt2video') return label.includes('文生视频') || label.includes('文本') || label.includes('文生')
+  if (videoModelTab.value === 'img2video') return label.includes('图生视频') || label.includes('图生') || label.includes('首帧') || label.includes('全能参考')
+  return label.includes('视频生视频')
 }
 
 function countDisplayText(value: string) {
@@ -1588,6 +1811,40 @@ function countDisplayText(value: string) {
   const digits = raw.replace(/[^\d]/g, '')
   if (!digits) return raw
   return isVideo.value ? `${digits}秒` : `${digits}张`
+}
+
+function videoSettingIconByValue(value: string) {
+  return VIDEO_SETTING_FEATURES.find((option) => option.value === value)?.icon || VIDEO_SETTING_FEATURES[0].icon
+}
+
+function coerceVideoSettingFeature(value: unknown): VideoSettingFeature {
+  const matched = VIDEO_SETTING_FEATURES.find((option) => option.value === value)
+  return matched?.value || VIDEO_SETTING_FEATURES[0].value
+}
+
+function normalizeVideoSettingSelection() {
+  if (!isVideo.value) return
+  const selectedOption = videoSettingOptions.value.find((option) => option.value === selectedVideoSettingFeature.value)
+  if (selectedOption && !selectedOption.disabled) {
+    lastEnabledVideoSettingFeature.value = selectedOption.value
+    return
+  }
+  const lastEnabledOption = videoSettingOptions.value.find((option) => option.value === lastEnabledVideoSettingFeature.value && !option.disabled)
+  selectedVideoSettingFeature.value = lastEnabledOption?.value || firstEnabledVideoSettingOption.value?.value || VIDEO_SETTING_FEATURES[0].value
+  lastEnabledVideoSettingFeature.value = selectedVideoSettingFeature.value
+}
+
+function onVideoSettingChange(value: unknown) {
+  const nextValue = coerceVideoSettingFeature(value)
+  const option = videoSettingOptions.value.find((item) => item.value === nextValue)
+  if (option?.disabled) {
+    normalizeVideoSettingSelection()
+    message.warning('请切换支持该功能的模型后使用')
+    return
+  }
+  selectedVideoSettingFeature.value = nextValue
+  lastEnabledVideoSettingFeature.value = nextValue
+  pruneUploadsForCurrentModel()
 }
 
 function closeAll(except?: PopoverName) {
@@ -1619,6 +1876,7 @@ function onModeChange(next: string | number) {
   mode.value = resolved
   closeAll()
   ensureCurrentModelAvailable()
+  normalizeVideoSettingSelection()
   resetReferenceUploads()
 }
 
@@ -1637,13 +1895,15 @@ function setModelTab(key: ModelTabKey) {
     currentModel.value = firstVisible
   }
   applySelectionDefaults()
-  resetReferenceUploads()
+  normalizeVideoSettingSelection()
+  pruneUploadsForCurrentModel()
 }
 
 function selectModel(modelItem: ModelItem) {
   currentModel.value = modelItem
   applySelectionDefaults()
-  resetReferenceUploads()
+  normalizeVideoSettingSelection()
+  pruneUploadsForCurrentModel()
   modelOpen.value = false
 }
 
@@ -1696,16 +1956,24 @@ async function onGenerate() {
 
     if (isVideoTask && shouldShowVideoUploads.value) {
       const videoPayload = payload as VideoTaskPayload
-      if (baseReferenceState.value.imageIds.length) {
-        videoPayload.image_ids = [...baseReferenceState.value.imageIds]
+      if (selectedVideoSettingFeature.value === 'first_frame' || selectedVideoSettingFeature.value === 'first_last_frame') {
+        const firstFrameImageId = firstFrameState.value.imageIds[0]
+        if (firstFrameImageId) {
+          videoPayload.first_frame_image_id = firstFrameImageId
+        }
+        const lastFrameImageId = lastFrameState.value.imageIds[0]
+        if (selectedVideoSettingFeature.value === 'first_last_frame' && lastFrameImageId) {
+          videoPayload.last_frame_image_id = lastFrameImageId
+        }
       }
-      const firstFrameImageId = firstFrameState.value.imageIds[0]
-      if (firstFrameImageId) {
-        videoPayload.first_frame_image_id = firstFrameImageId
-      }
-      const lastFrameImageId = lastFrameState.value.imageIds[0]
-      if (supportsFirstLastFrame.value && lastFrameImageId) {
-        videoPayload.last_frame_image_id = lastFrameImageId
+      if (selectedVideoSettingFeature.value === 'multimodal_ref') {
+        const imageIds = [
+          ...baseReferenceState.value.imageIds,
+          ...videoReferenceState.value.imageIds,
+        ]
+        if (imageIds.length) {
+          videoPayload.image_ids = imageIds
+        }
       }
     }
     createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload, { timeout: 60000 })
@@ -1792,6 +2060,22 @@ onMounted(() => {
     syncPromptFromEditor()
   })
 })
+
+watch(
+  videoSettingOptions,
+  () => {
+    normalizeVideoSettingSelection()
+  },
+  { immediate: true },
+)
+
+watch(
+  selectedVideoSettingFeature,
+  () => {
+    if (!isVideo.value) return
+    pruneUploadsForCurrentModel()
+  },
+)
 
 onBeforeUnmount(() => {
   clearPollingTask()
@@ -2161,7 +2445,8 @@ onBeforeUnmount(() => {
         cursor: pointer;
       }
 
-      :deep(.prompt-mention-thumb) {
+      :deep(.prompt-mention-thumb),
+      :deep(.prompt-mention-video) {
         width: 18px;
         height: 18px;
         border-radius: 4px;
@@ -2305,6 +2590,115 @@ onBeforeUnmount(() => {
   }
 }
 
+.setting{
+  :deep(.ant-select-selector){
+    height: 36px;
+    font-size: 12px;
+    border: 1px solid #e8e7ea !important;
+    border-radius: 18px;
+    box-shadow:none !important;
+    padding: 0 24px 0 12px;
+  }
+
+  :deep(.ant-select-selection-item) {
+    display: inline-flex;
+    align-items: center;
+    line-height: 34px;
+    padding: 0;
+  }
+
+  :deep(.ant-select-arrow) {
+    right: 10px;
+  }
+}
+
+.video-setting-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: rgba(0, 0, 0, 0.88);
+
+  &.selected {
+    max-width: 78px;
+  }
+
+  &.disabled {
+    color: rgba(0, 0, 0, 0.28);
+  }
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .video-setting-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+}
+
+:global(.video-setting-dropdown) {
+  width: 108px !important;
+}
+
+:global(.video-setting-dropdown .ant-select-item-option-content) {
+  display: flex;
+  align-items: center;
+}
+
+:global(.video-setting-dropdown .video-setting-disabled-option .video-setting-option) {
+  color: rgba(0, 0, 0, 0.28);
+}
+
+:global(.video-setting-dropdown .video-setting-disabled-option .video-setting-icon) {
+  opacity: 0.35;
+}
+
+:global(.video-setting-dropdown .video-setting-option) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+:global(.video-setting-dropdown .video-setting-icon) {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+:global(.video-setting-dropdown .video-setting-disabled-option) {
+  cursor: not-allowed;
+}
+
+:global(.video-setting-dropdown .video-setting-disabled-option .ant-select-item-option-content) {
+  cursor: not-allowed;
+}
+
+:global(.video-setting-dropdown .video-setting-disabled-option .ant-select-item-option-content > span) {
+  width: 100%;
+}
+
+:global(.video-setting-dropdown .ant-select-item-option) {
+  min-height: 34px;
+}
+
+:global(.video-setting-dropdown .ant-select-item-option-selected:not(.video-setting-disabled-option)) {
+  background: #f5f5f6;
+}
+
+:global(.video-setting-dropdown .ant-select-item-option-active:not(.video-setting-disabled-option)) {
+  background: #f5f5f6;
+}
+
+:global(.video-setting-dropdown .ant-select-item-option-state) {
+  display: none;
+}
+
 .right-controls {
   display: flex;
   align-items: center;
@@ -2328,6 +2722,10 @@ onBeforeUnmount(() => {
     .translate-icon {
       font-size: 14px;
     }
+  }
+
+  .generate-tooltip-wrap {
+    display: inline-flex;
   }
 
   .generate {
@@ -2594,6 +2992,13 @@ onBeforeUnmount(() => {
       color: rgba(0, 0, 0, 0.45);
     }
 
+    .cap-tag-svg {
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
     .cap-tag.selected {
       color: #4f49d8;
       border-color: #a9a8d8;
@@ -2602,6 +3007,10 @@ onBeforeUnmount(() => {
 
     .cap-tag.selected .cap-tag-icon {
       color: #6a63db;
+    }
+
+    .cap-tag.selected .cap-tag-svg {
+      opacity: 1;
     }
   }
 }

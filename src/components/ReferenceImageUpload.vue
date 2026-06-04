@@ -448,6 +448,7 @@ onBeforeUnmount(() => {
 })
 
 defineExpose({
+  clearAll,
   uploadFiles,
 })
 </script>
@@ -512,6 +513,9 @@ defineExpose({
       background: #fff;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
       padding: 0;
+      .upload-tag {
+        display: none;
+      }
     }
 
     &:not(:hover) .upload-wrapper.stack-add-wrapper .upload-plus {

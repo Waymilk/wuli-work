@@ -77,7 +77,15 @@
               <span class="detail-prompt-text">
                 <template v-for="part in promptParts" :key="part.key">
                   <span v-if="part.type === 'dataset'" class="prompt-mention-token">
-                    <img class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" />
+                    <video
+                      v-if="part.mediaType === 'video'"
+                      class="prompt-mention-video"
+                      :src="part.datasetUrl"
+                      muted
+                      playsinline
+                      preload="metadata"
+                    />
+                    <img v-else class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" />
                     <span class="prompt-mention-label">{{ part.label || '图片' }}</span>
                   </span>
                   <span v-else>{{ part.text }}</span>
@@ -157,6 +165,7 @@ export type InspirationDetailPromptDataset = {
   datasetId: string
   datasetUrl: string
   label?: string
+  mediaType?: 'image' | 'video'
 }
 
 export type InspirationDetailItem = {
@@ -195,6 +204,7 @@ type PromptRenderPart = {
   text: string
   datasetUrl?: string
   label?: string
+  mediaType?: 'image' | 'video'
 }
 
 const IconFont = createFromIconfontCN({
@@ -232,6 +242,15 @@ const currentMedia = computed<InspirationDetailThumbnail>(() => {
   return list[Math.min(activeThumbIndex.value, list.length - 1)]
 })
 
+function isVideoUrl(url: string) {
+  return /\.(mp4|webm|mov|m4v|m3u8)(\?|#|$)/i.test(String(url || ''))
+}
+
+function isVideoPromptDataset(dataset: InspirationDetailPromptDataset | undefined) {
+  if (!dataset) return false
+  return dataset.mediaType === 'video' || dataset.label === '视频' || isVideoUrl(dataset.datasetUrl)
+}
+
 const promptParts = computed<PromptRenderPart[]>(() => {
   const text = String(props.item?.prompt || '')
   if (!text) return []
@@ -254,12 +273,14 @@ const promptParts = computed<PromptRenderPart[]>(() => {
     const datasetId = String(match[1] || '').trim()
     const dataset = datasetsById.get(datasetId)
     if (dataset?.datasetUrl) {
+      const mediaType = isVideoPromptDataset(dataset) ? 'video' : 'image'
       parts.push({
         key: `dataset-${match.index}-${datasetId}`,
         type: 'dataset',
         text: match[0],
         datasetUrl: dataset.datasetUrl,
-        label: dataset.label,
+        label: mediaType === 'video' ? '视频' : '图片',
+        mediaType,
       })
     } else {
       parts.push({
@@ -682,7 +703,8 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
   vertical-align: middle;
 }
 
-.prompt-mention-thumb {
+.prompt-mention-thumb,
+.prompt-mention-video {
   border-radius: 4px;
   flex-shrink: 0;
   height: 18px;
