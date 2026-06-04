@@ -1124,11 +1124,13 @@ function onSelectMention(item: MentionDatasetItem) {
   if (!selection || selection.rangeCount === 0) return
   const range = selection.getRangeAt(0)
   const token = createMentionTokenNode(item)
+  const leadingSpace = document.createTextNode(' ')
   const trailingSpace = document.createTextNode(' ')
 
   range.deleteContents()
   range.insertNode(trailingSpace)
   range.insertNode(token)
+  range.insertNode(leadingSpace)
 
   const nextRange = document.createRange()
   nextRange.setStartAfter(trailingSpace)
