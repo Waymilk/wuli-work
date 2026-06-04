@@ -193,6 +193,8 @@ function stackItemStyle(index: number): CSSProperties | undefined {
 }
 
 const beforeUpload: UploadProps['beforeUpload'] = () => false
+const IMAGE_MAX_SIZE = 20 * 1024 * 1024
+const VIDEO_MAX_SIZE = 50 * 1024 * 1024
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (typeof error === 'string' && error.trim()) return error
@@ -222,8 +224,29 @@ function isVideoUrl(url: string) {
   return /\.(mp4|webm|mov|m4v|m3u8)(\?|#|$)/i.test(String(url || ''))
 }
 
+function isVideoFile(file: File) {
+  return file.type?.startsWith('video/') || isVideoUrl(file.name)
+}
+
+function getUploadSizeLimit(file: File) {
+  return isVideoFile(file)
+    ? { maxSize: VIDEO_MAX_SIZE, message: '视频大小不能超过50M' }
+    : { maxSize: IMAGE_MAX_SIZE, message: '图片大小不能超过20M' }
+}
+
+function validateUploadFileSize(file: File) {
+  const { maxSize, message: warningText } = getUploadSizeLimit(file)
+  if (file.size <= maxSize) return true
+  message.warning(warningText)
+  return false
+}
+
+function filterFilesBySize(files: File[]) {
+  return files.filter((file) => validateUploadFileSize(file))
+}
+
 function isVideoItem(item: UploadListItem) {
-  return item.file?.type?.startsWith('video/') || isVideoUrl(resolveItemDisplayUrl(item))
+  return isVideoFile(item.file) || isVideoUrl(resolveItemDisplayUrl(item))
 }
 
 const onVideoHoverEnter = async (event: Event) => {
@@ -403,6 +426,7 @@ const onUploadChange: UploadProps['onChange'] = (info) => {
   const fileObj = resolveUploadFile(info)
   if (!fileObj) return
   if (items.value.length >= maxCountSafe.value) return
+  if (!validateUploadFileSize(fileObj)) return
 
   const uid = String(info.file?.uid || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
   addLocalItem(fileObj, uid)
@@ -412,7 +436,7 @@ const onUploadChange: UploadProps['onChange'] = (info) => {
 function uploadFiles(files: File[]) {
   if (props.disabled || !files.length) return 0
   const remaining = Math.max(0, maxCountSafe.value - items.value.length)
-  const acceptedFiles = files.slice(0, remaining)
+  const acceptedFiles = filterFilesBySize(files).slice(0, remaining)
   acceptedFiles.forEach((file) => {
     const uid = `drop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     addLocalItem(file, uid)

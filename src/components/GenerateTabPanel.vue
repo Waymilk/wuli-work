@@ -625,6 +625,7 @@ const generateCostText = computed(() => {
   if (!hasGenerateCost.value) return '--'
   return String(generateCost.value)
 })
+const currentUserCredits = computed(() => parseUserCredits(authStore.user))
 const referenceImageFile = ref<File | null>(null)
 const referenceUploadRenderKey = ref(0)
 const uploadRefs = ref<Partial<Record<UploadSlotKey, ReferenceUploadExpose>>>({})
@@ -674,8 +675,18 @@ const canGenerate = computed(() => (
   && Boolean(currentModel.value)
   && !isModelsLoading.value
 ))
-const isGenerateButtonDisabled = computed(() => !canGenerate.value || isSubmitting.value)
-const generateTooltipTitle = computed(() => (!hasPrompt.value ? '请输入描述内容' : ''))
+const isInsufficientCredits = computed(() => {
+  if (!authStore.isLoggedIn) return false
+  if (!hasGenerateCost.value) return false
+  if (currentUserCredits.value === undefined) return false
+  return currentUserCredits.value < Number(generateCost.value)
+})
+const isGenerateButtonDisabled = computed(() => !canGenerate.value || isSubmitting.value || isInsufficientCredits.value)
+const generateTooltipTitle = computed(() => {
+  if (!hasPrompt.value) return '请输入描述内容'
+  if (isInsufficientCredits.value) return '积分不足'
+  return ''
+})
 const isSubmitting = ref(false)
 const isPolling = ref(false)
 const currentTaskId = ref<string | null>(null)
@@ -688,6 +699,26 @@ function getPopupContainer(trigger: HTMLElement): HTMLElement {
 
 function hasDescriptionText(value: string) {
   return value.replace(/@?\{[^{}]+\}/g, '').trim().length > 0
+}
+
+function parseFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim())
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+function parseUserCredits(user: unknown): number | undefined {
+  if (!user || typeof user !== 'object') return undefined
+  const record = user as Record<string, unknown>
+  const keys = ['credits', 'credit', 'balance', 'points']
+  for (const key of keys) {
+    const parsed = parseFiniteNumber(record[key])
+    if (parsed !== undefined) return parsed
+  }
+  return undefined
 }
 
 function setUploadRef(slotKey: UploadSlotKey, instance: unknown) {
@@ -1914,6 +1945,10 @@ async function onGenerate() {
     return
   }
   if (!canGenerate.value || isSubmitting.value) return
+  if (isInsufficientCredits.value) {
+    message.warning('积分不足')
+    return
+  }
 
   const isVideoTask = isVideo.value
   if (isVideoTask && videoModelTab.value === 'vid2video') {

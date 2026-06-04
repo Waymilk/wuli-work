@@ -525,15 +525,17 @@ const loadUserInfo = async () => {
     if (nextAvatarUrl) {
       avatarUrl.value = nextAvatarUrl
     }
-    if (res?.id || res?.username || res?.email || nextAvatarUrl) {
-      const nextUser: Partial<{ id: number; username: string; email: string; avatar_url: string }> = {}
+    const hasCredits = Boolean(res && Object.prototype.hasOwnProperty.call(res, 'credits'))
+    if (res?.id || res?.username || res?.email || nextAvatarUrl || hasCredits) {
+      const nextUser: Partial<{ id: number; username: string; email: string; avatar_url: string; credits: string | number | null }> = {}
       if (typeof res?.id === 'number') nextUser.id = res.id
       if (typeof res?.username === 'string' && res.username.trim()) nextUser.username = res.username.trim()
       if (typeof res?.email === 'string') nextUser.email = res.email.trim()
       if (nextAvatarUrl) nextUser.avatar_url = nextAvatarUrl
+      if (hasCredits) nextUser.credits = res?.credits ?? null
       authStore.updateUser(nextUser)
     }
-    if (!res || !Object.prototype.hasOwnProperty.call(res, 'credits')) {
+    if (!hasCredits) {
       creditsValue.value = null
       return
     }

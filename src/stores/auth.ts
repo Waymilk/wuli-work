@@ -10,6 +10,10 @@ interface AuthUser {
   username: string
   email?: string
   avatar_url?: string
+  credits?: string | number | null
+  credit?: string | number | null
+  balance?: string | number | null
+  points?: string | number | null
 }
 
 function safeParseUser(value: string | null) {
