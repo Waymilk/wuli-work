@@ -19,6 +19,12 @@ export interface GeneratePromptDataset {
   mediaType?: 'image' | 'video'
 }
 
+export interface GenerateReferenceAsset {
+  imageId: number
+  url: string
+  mediaType: 'image' | 'video'
+}
+
 export interface GenerateTaskCreatedPayload {
   taskId: string
   displayMeta: GenerateTaskDisplayMeta
@@ -63,6 +69,8 @@ interface HistoryParameters {
   resolution?: string
   duration?: number | string
   model_name?: string
+  task_type?: string
+  runway_model?: string
   reference_dataset_id?: unknown
   reference_dataset_ids?: unknown
   reference_dataset_url?: unknown
@@ -113,6 +121,12 @@ export interface GenerateHistoryItem {
   progress?: number
   progressText?: string
   errorMessage?: string
+  rawModelId?: number
+  rawModelName?: string
+  rawTaskType?: string
+  rawRunwayModel?: string
+  rawParameters?: HistoryParameters
+  referenceAssets: GenerateReferenceAsset[]
 }
 
 const POLL_INTERVAL_MS = 5000
@@ -214,8 +228,8 @@ function normalizeReferenceImageDatasets(value: unknown): GeneratePromptDataset[
   const datasets: GeneratePromptDataset[] = []
   for (const rawItem of value) {
     if (!rawItem || typeof rawItem !== 'object') continue
-    const item = rawItem as { id?: unknown; url?: unknown; label?: unknown; mediaType?: unknown; media_type?: unknown; type?: unknown }
-    const datasetId = String(item.id ?? '').trim()
+    const item = rawItem as { id?: unknown; image_id?: unknown; imageId?: unknown; url?: unknown; label?: unknown; mediaType?: unknown; media_type?: unknown; type?: unknown }
+    const datasetId = String(item.image_id ?? item.imageId ?? item.id ?? '').trim()
     const datasetUrl = typeof item.url === 'string' ? item.url.trim() : ''
     if (!datasetId || !datasetUrl) continue
     const rawMediaType = String(item.mediaType ?? item.media_type ?? item.type ?? '').trim().toLowerCase()
@@ -228,6 +242,25 @@ function normalizeReferenceImageDatasets(value: unknown): GeneratePromptDataset[
     })
   }
   return datasets
+}
+
+function normalizeReferenceAssets(value: unknown): GenerateReferenceAsset[] {
+  if (!Array.isArray(value)) return []
+  const assets: GenerateReferenceAsset[] = []
+  for (const rawItem of value) {
+    if (!rawItem || typeof rawItem !== 'object') continue
+    const item = rawItem as { id?: unknown; image_id?: unknown; imageId?: unknown; url?: unknown; mediaType?: unknown; media_type?: unknown; type?: unknown }
+    const imageId = Number(item.image_id ?? item.imageId ?? item.id)
+    const url = typeof item.url === 'string' ? item.url.trim() : ''
+    if (!Number.isFinite(imageId) || imageId <= 0 || !url) continue
+    const rawMediaType = String(item.mediaType ?? item.media_type ?? item.type ?? '').trim().toLowerCase()
+    assets.push({
+      imageId,
+      url,
+      mediaType: rawMediaType === 'video' ? 'video' : 'image',
+    })
+  }
+  return assets
 }
 
 function normalizeUnknownStringList(value: unknown): string[] {
@@ -316,6 +349,7 @@ function mapHistoryItemToStoreItem(item: HistoryItemResponse): GenerateHistoryIt
     : (numImages ? `${numImages}张` : '-')
   const taskId = String(item.replicate_id || '').trim() || `history-${item.id}`
   const resultImages = normalizeResultUrls(item.result_urls)
+  const referenceAssets = normalizeReferenceAssets(item.reference_images)
   const promptDatasets = dedupePromptDatasets([
     ...normalizeReferenceImageDatasets(item.reference_images),
     ...normalizeLegacyReferenceDatasets(params),
@@ -343,6 +377,12 @@ function mapHistoryItemToStoreItem(item: HistoryItemResponse): GenerateHistoryIt
     progress: undefined,
     progressText: undefined,
     errorMessage: item.error_message || undefined,
+    rawModelId: toPositiveInt(item.model_id),
+    rawModelName: String(params.model_name || item.model_name || '').trim() || undefined,
+    rawTaskType: String(params.task_type || '').trim() || undefined,
+    rawRunwayModel: String(params.runway_model || '').trim() || undefined,
+    rawParameters: params,
+    referenceAssets,
   }
 }
 
@@ -486,6 +526,7 @@ export const useGenerateTasksStore = defineStore('generateTasks', () => {
       isFavorite: false,
       progress: 0,
       progressText: '生成中...',
+      referenceAssets: [],
     }
 
     items.value.unshift(item)

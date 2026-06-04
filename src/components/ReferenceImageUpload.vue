@@ -76,7 +76,7 @@ type UploadItemStatus = 'uploading' | 'success' | 'error'
 
 interface UploadListItem {
   uid: string
-  file: File
+  file: File | null
   localPreviewUrl: string
   imageId: number
   imageUrl: string
@@ -246,7 +246,7 @@ function filterFilesBySize(files: File[]) {
 }
 
 function isVideoItem(item: UploadListItem) {
-  return isVideoFile(item.file) || isVideoUrl(resolveItemDisplayUrl(item))
+  return (item.file ? isVideoFile(item.file) : false) || isVideoUrl(resolveItemDisplayUrl(item))
 }
 
 const onVideoHoverEnter = async (event: Event) => {
@@ -280,7 +280,7 @@ function clearAll() {
 }
 
 function emitAllStates(lastSuccess: boolean, error?: string) {
-  const files = items.value.map((item) => item.file)
+  const files = items.value.map((item) => item.file).filter((file): file is File => Boolean(file))
   const displayUrls = items.value.map((item) => item.imageUrl || item.datasetUrl || item.localPreviewUrl)
   const payloadItems: FileChangeItemPayload[] = items.value.map((item) => ({
     uid: item.uid,
@@ -342,9 +342,32 @@ function addLocalItem(file: File, uid: string) {
   emitAllStates(false)
 }
 
+function addRemoteUrl(url: string, options?: { imageId?: number; mediaType?: 'image' | 'video' }) {
+  const src = String(url || '').trim()
+  if (!src || props.disabled) return false
+  if (items.value.length >= maxCountSafe.value) return false
+  const imageId = Number(options?.imageId || 0)
+  const validImageId = Number.isFinite(imageId) && imageId > 0 ? imageId : 0
+  const item: UploadListItem = {
+    uid: `remote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    file: null,
+    localPreviewUrl: src,
+    imageId: validImageId,
+    imageUrl: validImageId ? src : '',
+    datasetId: validImageId ? String(validImageId) : '',
+    datasetUrl: validImageId ? src : '',
+    status: 'success',
+    error: '',
+  }
+  items.value.push(item)
+  emitAllStates(true)
+  return true
+}
+
 async function uploadFileByUid(uid: string) {
   const target = items.value.find((item) => item.uid === uid)
   if (!isValidItem(target)) return
+  if (!target.file) return
 
   const nextSeq = (uploadSeqByUid.value[uid] || 0) + 1
   uploadSeqByUid.value[uid] = nextSeq
@@ -473,6 +496,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
   clearAll,
+  addRemoteUrl,
   uploadFiles,
 })
 </script>

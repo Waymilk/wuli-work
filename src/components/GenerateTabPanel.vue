@@ -369,8 +369,32 @@ type UploadSlotKey = 'reference' | 'videoReference' | 'firstFrame' | 'lastFrame'
 type VideoSettingFeature = 'first_frame' | 'first_last_frame' | 'multimodal_ref'
 type UploadSlotConfig = { key: UploadSlotKey; isVideo: boolean; maxCount: number; tagLabel: string; accept: string }
 type CapTagItem = { key: string; label: string; feature?: VideoSettingFeature; iconSrc?: string }
+type PrefillReferenceAsset = { imageId: number; url: string; mediaType: 'image' | 'video' }
+type PrefillVideoPathPayload = {
+  prompt?: string
+  modelId?: number
+  modelName?: string
+  taskType?: string
+  runwayModel?: string
+  aspectRatio?: string
+  resolution?: string
+  duration?: string
+  referenceAssets?: PrefillReferenceAsset[]
+}
+type PrefillImagePathPayload = {
+  prompt?: string
+  modelId?: number
+  modelName?: string
+  taskType?: string
+  runwayModel?: string
+  aspectRatio?: string
+  imageSize?: string
+  numImages?: string
+  referenceAssets?: PrefillReferenceAsset[]
+}
 type ReferenceUploadExpose = {
   clearAll: () => void
+  addRemoteUrl: (url: string, options?: { imageId?: number; mediaType?: 'image' | 'video' }) => boolean
   uploadFiles: (files: File[]) => number
 }
 
@@ -2075,7 +2099,196 @@ function setPrompt(value: string) {
   })
 }
 
+function pickOptionByText(options: string[], value?: string) {
+  const target = String(value || '').trim()
+  if (!target) return ''
+  const normalizedTarget = target.toLowerCase()
+  return options.find((item) => String(item || '').trim().toLowerCase() === normalizedTarget) || target
+}
+
+function findVideoModelForPrefill(payload: PrefillVideoPathPayload) {
+  const modelId = Number(payload.modelId || 0)
+  const modelName = String(payload.modelName || '').trim().toLowerCase()
+  const taskType = String(payload.taskType || '').trim().toLowerCase()
+  const runwayModel = String(payload.runwayModel || '').trim().toLowerCase()
+  return videoModels.value.find((model) => (
+    (modelId > 0 && model.modelId === modelId)
+    || (modelName && model.name.trim().toLowerCase() === modelName)
+    || (taskType && String(model.taskType || '').trim().toLowerCase() === taskType)
+    || (runwayModel && String(model.runwayModel || '').trim().toLowerCase() === runwayModel)
+  )) || null
+}
+
+function findImageModelForPrefill(payload: PrefillImagePathPayload) {
+  const modelId = Number(payload.modelId || 0)
+  const modelName = String(payload.modelName || '').trim().toLowerCase()
+  const taskType = String(payload.taskType || '').trim().toLowerCase()
+  const runwayModel = String(payload.runwayModel || '').trim().toLowerCase()
+  return imageModels.value.find((model) => (
+    (modelId > 0 && model.modelId === modelId)
+    || (modelName && model.name.trim().toLowerCase() === modelName)
+    || (taskType && String(model.taskType || '').trim().toLowerCase() === taskType)
+    || (runwayModel && String(model.runwayModel || '').trim().toLowerCase() === runwayModel)
+  )) || null
+}
+
+function chooseVideoSettingForAssets(assets: PrefillReferenceAsset[]) {
+  if (assets.some((asset) => asset.mediaType === 'video')) return 'multimodal_ref'
+  if (normalizedModelSpecialFeatures.value.has('first_frame')) return 'first_frame'
+  return firstEnabledVideoSettingOption.value?.value || selectedVideoSettingFeature.value
+}
+
+function addPrefillAssetToSlot(slotKey: UploadSlotKey, asset: PrefillReferenceAsset) {
+  uploadRefs.value[slotKey]?.addRemoteUrl(asset.url, {
+    imageId: asset.imageId,
+    mediaType: asset.mediaType,
+  })
+}
+
+function videoImageReferenceTargetSlot(): UploadSlotKey | null {
+  if (normalizedModelSpecialFeatures.value.has('first_frame')) {
+    selectedVideoSettingFeature.value = 'first_frame'
+    return 'firstFrame'
+  }
+  if (normalizedModelSpecialFeatures.value.has('first_last_frame')) {
+    selectedVideoSettingFeature.value = 'first_last_frame'
+    return 'firstFrame'
+  }
+  if (normalizedModelSpecialFeatures.value.has('multimodal_ref')) {
+    selectedVideoSettingFeature.value = 'multimodal_ref'
+    return 'reference'
+  }
+  return null
+}
+
+function ensureVideoModeModelForImageReference() {
+  const isCurrentVideoModel = currentModel.value
+    ? videoModels.value.some((model) => model.id === currentModel.value?.id)
+    : false
+  if (!isCurrentVideoModel) {
+    currentModel.value = visibleModels.value[0] || videoModels.value.find((model) => model.caps.includes('ref')) || videoModels.value[0] || null
+  }
+}
+
+function prefillVideoPathFromHistory(payload: PrefillVideoPathPayload) {
+  mode.value = 'VIDEO'
+  closeAll()
+
+  const matchedModel = findVideoModelForPrefill(payload)
+  if (matchedModel) currentModel.value = matchedModel
+
+  const refs = payload.referenceAssets || []
+  const hasVideoRef = refs.some((asset) => asset.mediaType === 'video')
+  const hasImageRef = refs.some((asset) => asset.mediaType !== 'video')
+  videoModelTab.value = hasVideoRef ? 'vid2video' : (hasImageRef ? 'img2video' : 'txt2video')
+
+  ensureCurrentModelAvailable()
+  selectedVideoSettingFeature.value = chooseVideoSettingForAssets(refs)
+  normalizeVideoSettingSelection()
+  applySelectionDefaults()
+  selectedRatio.value = pickOptionByText(ratioOptions.value, payload.aspectRatio) || selectedRatio.value
+  selectedSize.value = pickOptionByText(sizeOptions.value, payload.resolution) || selectedSize.value
+  selectedCount.value = pickOptionByText(countOptions.value, payload.duration) || selectedCount.value
+  setPrompt(payload.prompt || '')
+  resetReferenceUploads()
+
+  nextTick(() => {
+    refs.forEach((asset) => {
+      if (!asset.url || !asset.imageId) return
+      if (selectedVideoSettingFeature.value === 'multimodal_ref') {
+        addPrefillAssetToSlot(asset.mediaType === 'video' ? 'videoReference' : 'reference', asset)
+        return
+      }
+      if (asset.mediaType === 'image') {
+        addPrefillAssetToSlot('firstFrame', asset)
+      }
+    })
+  })
+}
+
+function prefillImagePathFromHistory(payload: PrefillImagePathPayload) {
+  mode.value = 'IMAGE'
+  closeAll()
+
+  const matchedModel = findImageModelForPrefill(payload)
+  if (matchedModel) currentModel.value = matchedModel
+
+  const refs = (payload.referenceAssets || []).filter((asset) => asset.mediaType === 'image')
+  imageModelTab.value = refs.length ? 'ref2img' : 'txt2img'
+  ensureCurrentModelAvailable()
+  applySelectionDefaults()
+  selectedRatio.value = pickOptionByText(ratioOptions.value, payload.aspectRatio) || selectedRatio.value
+  selectedSize.value = pickOptionByText(sizeOptions.value, payload.imageSize) || selectedSize.value
+  selectedCount.value = pickOptionByText(countOptions.value, payload.numImages) || selectedCount.value
+  setPrompt(payload.prompt || '')
+  resetReferenceUploads()
+
+  nextTick(() => {
+    refs.forEach((asset) => {
+      if (!asset.url || !asset.imageId) return
+      addPrefillAssetToSlot('reference', asset)
+    })
+  })
+}
+
+function setImageReferenceFromUrl(url: string) {
+  const src = String(url || '').trim()
+  if (!src) {
+    message.warning('暂无可参考图片')
+    return
+  }
+  if (mode.value !== 'IMAGE') {
+    mode.value = 'IMAGE'
+    closeAll()
+    ensureCurrentModelAvailable()
+    normalizeVideoSettingSelection()
+    resetReferenceUploads()
+  }
+  onTextareaFocus()
+  nextTick(() => {
+    const uploaded = uploadRefs.value.reference?.addRemoteUrl(src)
+    if (!uploaded) {
+      message.warning('参考图添加失败')
+    }
+  })
+}
+
+function setVideoImageReferenceFromUrl(url: string) {
+  const src = String(url || '').trim()
+  if (!src) {
+    message.warning('暂无可参考图片')
+    return
+  }
+  if (mode.value !== 'VIDEO') {
+    mode.value = 'VIDEO'
+    closeAll()
+  }
+  videoModelTab.value = 'img2video'
+  ensureVideoModeModelForImageReference()
+
+  const targetSlot = videoImageReferenceTargetSlot()
+  if (!targetSlot) {
+    message.warning('当前模型不支持图生视频')
+    return
+  }
+
+  normalizeVideoSettingSelection()
+  clearUploadSlot(targetSlot)
+  syncMentionDatasetsFromUploads()
+  onTextareaFocus()
+  nextTick(() => {
+    const uploaded = uploadRefs.value[targetSlot]?.addRemoteUrl(src, { mediaType: 'image' })
+    if (!uploaded) {
+      message.warning('图生视频参考图添加失败')
+    }
+  })
+}
+
 defineExpose({
+  prefillImagePathFromHistory,
+  prefillVideoPathFromHistory,
+  setImageReferenceFromUrl,
+  setVideoImageReferenceFromUrl,
   setPrompt,
 })
 
@@ -2308,12 +2521,24 @@ onBeforeUnmount(() => {
         height: 50px;
         border:none;
       }
+      :deep(.upload-list){
+        min-height: 0 !important;
+      }
+      :deep(.upload-wrapper){
+        bottom: -56px !important;
+        right: 16px !important;
+      }
       .editor-wrap{
         flex:1;
         padding:0;
         .prompt-editor{
           min-height: 50px;
+          max-height: 50px;
           line-height: 50px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          overflow: hidden;
+          width: 360px;
         }
       }
     }
@@ -2323,6 +2548,7 @@ onBeforeUnmount(() => {
     .right-controls .translate{
       display: none;
     }
+    
   }
 }
 

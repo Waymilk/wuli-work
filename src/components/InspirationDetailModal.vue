@@ -108,30 +108,19 @@
             </div>
           </div>
 
-          <div class="detail-actions" :class="{ single: detailActions.length === 1 }">
+          <div class="detail-actions" :class="{ single: mergedDetailActions.length === 1 }">
             <button
-              v-for="action in detailActions"
-              :key="action.key"
+              v-for="action in mergedDetailActions"
+              :key="`${action.source}-${action.item.key}`"
               class="detail-action-btn"
-              :class="{ primary: action.primary }"
+              :class="{ primary: action.source === 'detail' && action.item.primary }"
               type="button"
-              @click="notifyFeatureUnavailable"
+              :disabled="isMergedActionLoading(action)"
+              @click="handleMergedActionClick(action)"
             >
-              <IconFont :type="resolveActionIcon(action)" />
-              <span>{{ action.label }}</span>
-            </button>
-          </div>
-
-          <div v-if="bottomActions.length" class="bottomActionBar">
-            <button
-              v-for="action in bottomActions"
-              :key="action.key"
-              class="bottomActionBtn"
-              type="button"
-              @click="notifyFeatureUnavailable"
-            >
-              <IconFont :type="action.icon" />
-              <span>{{ action.label }}</span>
+              <a-spin v-if="isMergedActionLoading(action)" size="small" />
+              <IconFont v-else :type="resolveMergedActionIcon(action)" />
+              <span>{{ action.item.label }}</span>
             </button>
           </div>
         </div>
@@ -158,8 +147,13 @@ export type InspirationDetailBottomAction = {
   key: 'img2video' | 'reedit' | 'regenerate' | string
   label: string
   icon: string
+  loading?: boolean
   onClick?: () => void
 }
+
+type MergedDetailAction =
+  | { source: 'detail'; item: InspirationDetailAction }
+  | { source: 'bottom'; item: InspirationDetailBottomAction }
 
 export type InspirationDetailThumbnail = {
   id?: string | number
@@ -424,6 +418,35 @@ const notifyFeatureUnavailable = () => {
   message.info('功能暂未开放')
 }
 
+const handleDetailActionClick = (action: InspirationDetailAction) => {
+  if (action.onClick) {
+    action.onClick()
+    return
+  }
+  notifyFeatureUnavailable()
+}
+
+const handleBottomActionClick = (action: InspirationDetailBottomAction) => {
+  if (action.onClick) {
+    action.onClick()
+    return
+  }
+  notifyFeatureUnavailable()
+}
+
+const handleMergedActionClick = (action: MergedDetailAction) => {
+  if (isMergedActionLoading(action)) return
+  if (action.source === 'bottom') {
+    handleBottomActionClick(action.item)
+    return
+  }
+  handleDetailActionClick(action.item)
+}
+
+const isMergedActionLoading = (action: MergedDetailAction) => (
+  action.source === 'bottom' && Boolean(action.item.loading)
+)
+
 watch(
   [() => props.open, () => currentMedia.value.src, () => currentMedia.value.type],
   async ([open, src, type]) => {
@@ -472,12 +495,12 @@ const detailActions = computed<InspirationDetailAction[]>(() => {
   if (props.item.actions?.length) return props.item.actions
 
   if (props.item.type === 'VIDEO' || primaryTag.value.includes('首帧')) {
-    return [{ key: 'clone', label: '一键同款', icon: 'icon-fuzhi' }]
+    return []
   }
 
   return [
     { key: 'reference', label: '参考生图', icon: 'icon-zuoweicankaotu' },
-    { key: 'clone', label: '一键同款', icon: 'icon-fuzhi' },
+    // { key: 'clone', label: '一键同款', icon: 'icon-fuzhi' },
   ]
 })
 
@@ -497,10 +520,27 @@ const bottomActions = computed<InspirationDetailBottomAction[]>(() => {
   return defaults
 })
 
+const actionOrder = ['reference', 'img2video', 'reedit', 'regenerate', 'clone']
+
+const mergedDetailActions = computed<MergedDetailAction[]>(() => [
+  ...detailActions.value.map((item) => ({ source: 'detail' as const, item })),
+  ...bottomActions.value.map((item) => ({ source: 'bottom' as const, item })),
+].sort((left, right) => {
+  const leftOrder = actionOrder.indexOf(left.item.key)
+  const rightOrder = actionOrder.indexOf(right.item.key)
+  return (leftOrder === -1 ? Number.MAX_SAFE_INTEGER : leftOrder)
+    - (rightOrder === -1 ? Number.MAX_SAFE_INTEGER : rightOrder)
+}))
+
 const resolveActionIcon = (action: InspirationDetailAction) => {
   if (action.icon) return action.icon
   if (action.key === 'reference') return 'icon-zuoweicankaotu'
   return 'icon-fuzhi'
+}
+
+const resolveMergedActionIcon = (action: MergedDetailAction) => {
+  if (action.source === 'bottom') return action.item.icon
+  return resolveActionIcon(action.item)
 }
 </script>
 
@@ -815,8 +855,7 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
   }
 }
 
-.detail-action-btn,
-.bottomActionBtn {
+.detail-action-btn {
   align-items: center;
   background: #fff;
   border: 1px solid #d9d9dd;
@@ -839,21 +878,22 @@ const resolveActionIcon = (action: InspirationDetailAction) => {
     box-shadow: 0 0 0 2px rgba(113, 90, 255, 0.08);
   }
 
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+
+    &:hover {
+      border-color: #d9d9dd;
+      box-shadow: none;
+    }
+  }
+
   :deep(.anticon),
   :deep(svg) {
     color: rgba(0, 0, 0, 0.65);
     font-size: 16px;
     line-height: 1;
   }
-}
-
-.bottomActionBar {
-  border-top: 1px solid #f0f0f2;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 14px;
-  padding-top: 14px;
 }
 
 @media (max-width: 1680px) {
