@@ -415,6 +415,7 @@ const emit = defineEmits<{
   (e: 'task-failed', payload: { taskId: string; status: string; error: string }): void
 }>()
 
+const TASK_REQUEST_TIMEOUT_MS = 5 * 60 * 1000
 const authStore = useAuthStore()
 
 interface ModelItem {
@@ -2028,7 +2029,7 @@ async function onGenerate() {
         }
       }
     }
-    createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload, { timeout: 60000 })
+    createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload, { timeout: TASK_REQUEST_TIMEOUT_MS })
 
     if (!createRes?.success || !createRes?.task_id) {
       throw new Error(getErrorMessage(createRes, '创建任务失败'))

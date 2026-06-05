@@ -241,15 +241,45 @@ import { message, Skeleton as ASkeleton, Spin as ASpin } from 'ant-design-vue'
 import GenerateTabPanel from '@/components/GenerateTabPanel.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import InspirationDetailModal, { type InspirationDetailItem } from '@/components/InspirationDetailModal.vue'
-import { useGenerateTasksStore, type GenerateHistoryItem, type GenerateTaskCreatedPayload } from '@/stores/generateTasks'
+import { useGenerateTasksStore, type GenerateHistoryItem, type GenerateReferenceAsset, type GenerateTaskCreatedPayload } from '@/stores/generateTasks'
+import request from '@/utils/request'
 
 const ASkeletonImage = ASkeleton.Image
 
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
 })
+const TASK_REQUEST_TIMEOUT_MS = 5 * 60 * 1000
 type GenerateTabPanelExpose = {
+  prefillImagePathFromHistory: (payload: ImageHistoryPrefillPayload) => void
+  prefillVideoPathFromHistory: (payload: VideoHistoryPrefillPayload) => void
+  setImageReferenceFromUrl: (url: string) => void
+  setVideoImageReferenceFromUrl: (url: string) => void
   setPrompt: (value: string) => void
+}
+
+type ImageHistoryPrefillPayload = {
+  prompt?: string
+  modelId?: number
+  modelName?: string
+  taskType?: string
+  runwayModel?: string
+  aspectRatio?: string
+  imageSize?: string
+  numImages?: string
+  referenceAssets?: GenerateReferenceAsset[]
+}
+
+type VideoHistoryPrefillPayload = {
+  prompt?: string
+  modelId?: number
+  modelName?: string
+  taskType?: string
+  runwayModel?: string
+  aspectRatio?: string
+  resolution?: string
+  duration?: string
+  referenceAssets?: GenerateReferenceAsset[]
 }
 
 type PromptRenderPart = {
@@ -268,6 +298,7 @@ const detailOpen = ref(false)
 const detailItem = ref<InspirationDetailItem | null>(null)
 const detailHistoryIndex = ref(-1)
 const hoveredVideoSlotKey = ref<string | null>(null)
+const regeneratingTaskId = ref<string | null>(null)
 const generateTasksStore = useGenerateTasksStore()
 const historyItems = computed(() => generateTasksStore.items)
 const historyLoading = computed(() => generateTasksStore.historyLoading)
@@ -302,6 +333,83 @@ const scrollToBottom = () => {
 
 function onTaskCreated(payload: GenerateTaskCreatedPayload) {
   generateTasksStore.enqueueTask(payload)
+}
+
+const normalizeHistoryDuration = (value: string) => {
+  const digits = String(value || '').replace(/[^\d]/g, '')
+  return digits || ''
+}
+
+const normalizeHistoryCount = (value: string) => {
+  const digits = String(value || '').replace(/[^\d]/g, '')
+  return digits || ''
+}
+
+const buildImageHistoryPrefillPayload = (item: GenerateHistoryItem): ImageHistoryPrefillPayload => ({
+  prompt: item.prompt,
+  modelId: item.rawModelId,
+  modelName: item.rawModelName || item.modelLabel,
+  taskType: item.rawTaskType,
+  runwayModel: item.rawRunwayModel,
+  aspectRatio: item.aspectRatio || item.ratioLabel,
+  imageSize: item.sizeLabel,
+  numImages: normalizeHistoryCount(item.countLabel),
+  referenceAssets: item.referenceAssets,
+})
+
+const buildImageRegeneratePayload = (item: GenerateHistoryItem) => {
+  const modelId = Number(item.rawModelId || 0)
+  const taskType = String(item.rawTaskType || item.rawRunwayModel || '').trim()
+  if (!modelId || !taskType) return null
+  const payload: Record<string, unknown> = {
+    prompt: item.prompt,
+    model_id: modelId,
+    task_type: taskType,
+    model_name: item.rawModelName || item.modelLabel,
+    aspect_ratio: item.aspectRatio || item.ratioLabel,
+  }
+  if (item.sizeLabel && item.sizeLabel !== '-') payload.image_size = item.sizeLabel
+  const numImages = Number(normalizeHistoryCount(item.countLabel) || 0)
+  if (numImages > 0) payload.num_images = numImages
+  const imageIds = item.referenceAssets
+    .filter((asset) => asset.mediaType === 'image')
+    .map((asset) => asset.imageId)
+    .filter((id) => Number.isFinite(id) && id > 0)
+  if (imageIds.length) payload.image_ids = imageIds
+  return payload
+}
+
+const buildVideoHistoryPrefillPayload = (item: GenerateHistoryItem): VideoHistoryPrefillPayload => ({
+  prompt: item.prompt,
+  modelId: item.rawModelId,
+  modelName: item.rawModelName || item.modelLabel,
+  taskType: item.rawTaskType,
+  runwayModel: item.rawRunwayModel,
+  aspectRatio: item.aspectRatio || item.ratioLabel,
+  resolution: item.sizeLabel,
+  duration: normalizeHistoryDuration(item.countLabel),
+  referenceAssets: item.referenceAssets,
+})
+
+const buildVideoRegeneratePayload = (item: GenerateHistoryItem) => {
+  const modelId = Number(item.rawModelId || 0)
+  const taskType = String(item.rawTaskType || item.rawRunwayModel || '').trim()
+  if (!modelId || !taskType) return null
+  const payload: Record<string, unknown> = {
+    prompt: item.prompt,
+    model_id: modelId,
+    task_type: taskType,
+    model_name: item.rawModelName || item.modelLabel,
+    aspect_ratio: item.aspectRatio || item.ratioLabel,
+  }
+  if (item.sizeLabel && item.sizeLabel !== '-') payload.resolution = item.sizeLabel
+  const duration = normalizeHistoryDuration(item.countLabel)
+  if (duration) payload.duration = duration
+  const imageIds = item.referenceAssets
+    .map((asset) => asset.imageId)
+    .filter((id) => Number.isFinite(id) && id > 0)
+  if (imageIds.length) payload.image_ids = imageIds
+  return payload
 }
 
 const itemClass = (idx: number, total: number) => ({
@@ -517,10 +625,186 @@ const openDetailByHistoryIndex = (historyIndex: number, mediaIndex = 0) => {
     ratioOrRes: item.ratioLabel,
     durationOrCount: displayCountLabel(item),
     sizeLabel: item.sizeLabel,
+    actions: currentType === 'IMAGE'
+      ? [
+          {
+            key: 'reference',
+            label: '参考生图',
+            icon: 'icon-zuoweicankaotu',
+            onClick: () => applyCurrentDetailImageAsReference(),
+          },
+          // { key: 'clone', label: '一键同款', icon: 'icon-fuzhi' },
+        ]
+      : undefined,
+    bottomActions: currentType === 'VIDEO'
+      ? [
+          {
+            key: 'reedit',
+            label: '重新编辑',
+            icon: 'icon-zhongxinbianji',
+            onClick: () => reEditVideoHistoryItem(item),
+          },
+          {
+            key: 'regenerate',
+            label: '再次生成',
+            icon: 'icon-zaicishengcheng',
+            loading: regeneratingTaskId.value === item.taskId,
+            onClick: () => regenerateVideoHistoryItem(item),
+          },
+        ]
+      : [
+          {
+            key: 'img2video',
+            label: '图生视频',
+            icon: 'icon-tushengshipin',
+            onClick: () => applyCurrentDetailImageToVideo(),
+          },
+          {
+            key: 'reedit',
+            label: '重新编辑',
+            icon: 'icon-zhongxinbianji',
+            onClick: () => reEditImageHistoryItem(item),
+          },
+          {
+            key: 'regenerate',
+            label: '再次生成',
+            icon: 'icon-zaicishengcheng',
+            loading: regeneratingTaskId.value === item.taskId,
+            onClick: () => regenerateImageHistoryItem(item),
+          },
+        ],
     onPrev: () => switchDetailHistory(-1),
     onNext: () => switchDetailHistory(1),
   }
   detailOpen.value = true
+}
+
+const reEditImageHistoryItem = (item: GenerateHistoryItem) => {
+  detailOpen.value = false
+  generatePanelRef.value?.prefillImagePathFromHistory(buildImageHistoryPrefillPayload(item))
+}
+
+const setCurrentRegenerateLoading = (loading: boolean) => {
+  if (!detailItem.value?.bottomActions) return
+  detailItem.value = {
+    ...detailItem.value,
+    bottomActions: detailItem.value.bottomActions.map((action) => (
+      action.key === 'regenerate' ? { ...action, loading } : action
+    )),
+  }
+}
+
+const regenerateImageHistoryItem = (item: GenerateHistoryItem) => {
+  void (async () => {
+    if (regeneratingTaskId.value) return
+    const payload = buildImageRegeneratePayload(item)
+    if (!payload) {
+      message.warning('该历史任务缺少模型配置，无法再次生成')
+      return
+    }
+    regeneratingTaskId.value = item.taskId
+    setCurrentRegenerateLoading(true)
+    try {
+      const res = await request.post<unknown, { success?: boolean; task_id?: string; detail?: string; message?: string; error?: unknown }>('/api/tasks', payload, { timeout: TASK_REQUEST_TIMEOUT_MS })
+      if (!res?.success || !res.task_id) {
+        throw new Error(resolveErrorMessage(res, '创建任务失败'))
+      }
+      generateTasksStore.enqueueTask({
+        taskId: res.task_id,
+        mediaType: 'IMAGE',
+        displayMeta: {
+          prompt: String(payload.prompt || ''),
+          modelLabel: String(payload.model_name || item.modelLabel),
+          ratioLabel: String(payload.aspect_ratio || item.ratioLabel),
+          sizeLabel: String(payload.image_size || item.sizeLabel),
+          countLabel: item.countLabel,
+        },
+        inputImages: item.referenceAssets.filter((asset) => asset.mediaType === 'image').map((asset) => asset.url),
+        promptDatasets: item.promptDatasets,
+        expectedCount: Number(payload.num_images || 0) || item.expectedCount,
+      })
+      detailOpen.value = false
+      message.success('任务创建成功，正在生成中...')
+    } catch (error) {
+      message.error(resolveErrorMessage(error, '创建任务失败'))
+    } finally {
+      regeneratingTaskId.value = null
+      setCurrentRegenerateLoading(false)
+    }
+  })()
+}
+
+const reEditVideoHistoryItem = (item: GenerateHistoryItem) => {
+  detailOpen.value = false
+  generatePanelRef.value?.prefillVideoPathFromHistory(buildVideoHistoryPrefillPayload(item))
+}
+
+const regenerateVideoHistoryItem = (item: GenerateHistoryItem) => {
+  void (async () => {
+    if (regeneratingTaskId.value) return
+    const payload = buildVideoRegeneratePayload(item)
+    if (!payload) {
+      message.warning('该历史任务缺少模型配置，无法再次生成')
+      return
+    }
+    regeneratingTaskId.value = item.taskId
+    setCurrentRegenerateLoading(true)
+    try {
+      const res = await request.post<unknown, { success?: boolean; task_id?: string; detail?: string; message?: string; error?: unknown }>('/api/tasks', payload, { timeout: TASK_REQUEST_TIMEOUT_MS })
+      if (!res?.success || !res.task_id) {
+        throw new Error(resolveErrorMessage(res, '创建任务失败'))
+      }
+      generateTasksStore.enqueueTask({
+        taskId: res.task_id,
+        mediaType: 'VIDEO',
+        displayMeta: {
+          prompt: String(payload.prompt || ''),
+          modelLabel: String(payload.model_name || item.modelLabel),
+          ratioLabel: String(payload.aspect_ratio || item.ratioLabel),
+          sizeLabel: String(payload.resolution || item.sizeLabel),
+          countLabel: item.countLabel,
+        },
+        inputImages: item.referenceAssets.map((asset) => asset.url),
+        promptDatasets: item.promptDatasets,
+        expectedCount: 1,
+      })
+      detailOpen.value = false
+      message.success('任务创建成功，正在生成中...')
+    } catch (error) {
+      message.error(resolveErrorMessage(error, '创建任务失败'))
+    } finally {
+      regeneratingTaskId.value = null
+      setCurrentRegenerateLoading(false)
+    }
+  })()
+}
+
+const applyCurrentDetailImageAsReference = () => {
+  const src = String(detailItem.value?.src || '').trim()
+  if (!src) {
+    message.warning('暂无可参考图片')
+    return
+  }
+  if (detailItem.value?.type === 'VIDEO' || isVideoUrl(src)) {
+    message.warning('当前内容不支持参考生图')
+    return
+  }
+  detailOpen.value = false
+  generatePanelRef.value?.setImageReferenceFromUrl(src)
+}
+
+const applyCurrentDetailImageToVideo = () => {
+  const src = String(detailItem.value?.src || '').trim()
+  if (!src) {
+    message.warning('暂无可参考图片')
+    return
+  }
+  if (detailItem.value?.type === 'VIDEO' || isVideoUrl(src)) {
+    message.warning('当前内容不支持图生视频')
+    return
+  }
+  detailOpen.value = false
+  generatePanelRef.value?.setVideoImageReferenceFromUrl(src)
 }
 
 const openPreviewDetail = (taskId: string, idx: number) => {

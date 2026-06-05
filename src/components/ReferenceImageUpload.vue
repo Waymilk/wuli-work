@@ -73,6 +73,7 @@ import { computed, onBeforeUnmount, ref, type CSSProperties } from 'vue'
 import request from '@/utils/request'
 
 type UploadItemStatus = 'uploading' | 'success' | 'error'
+const IMAGE_UPLOAD_TIMEOUT_MS = 60 * 1000
 
 interface UploadListItem {
   uid: string
@@ -384,7 +385,7 @@ async function uploadFileByUid(uid: string) {
   formData.append('image', target.file)
 
   try {
-    const res = await request.post<unknown, UploadResponse>('/api/user/images/upload', formData)
+    const res = await request.post<unknown, UploadResponse>('/api/user/images/upload', formData, { timeout: IMAGE_UPLOAD_TIMEOUT_MS })
     if (uploadSeqByUid.value[uid] !== nextSeq) return
 
     const imageId = Number(res?.image?.id)

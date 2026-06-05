@@ -381,6 +381,7 @@ const deactivatePassword = ref('')
 const isChangingPassword = ref(false)
 const isDeactivating = ref(false)
 let themeSubmenuTimer: ReturnType<typeof setTimeout> | null = null
+const IMAGE_UPLOAD_TIMEOUT_MS = 60 * 1000
 
 const messagePanelRef = ref<HTMLElement | null>(null)
 const messageBtnRef = ref<HTMLElement | null>(null)
@@ -600,7 +601,7 @@ const handleAvatarFileChange = async (event: Event) => {
   try {
     const formData = new FormData()
     formData.append('image', file)
-    const uploadRes = await request.post<unknown, UploadImageResponse>('/api/user/images/upload', formData)
+    const uploadRes = await request.post<unknown, UploadImageResponse>('/api/user/images/upload', formData, { timeout: IMAGE_UPLOAD_TIMEOUT_MS })
     const imageId = Number(uploadRes?.image?.id)
     if (!uploadRes?.success || !Number.isFinite(imageId) || imageId <= 0) {
       throw new Error(resolveErrorMessage(uploadRes, '头像上传失败'))
