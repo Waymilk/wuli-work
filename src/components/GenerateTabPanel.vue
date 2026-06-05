@@ -2515,6 +2515,9 @@ onBeforeUnmount(() => {
   flex-direction: column;
   &.mini{
     flex-direction: row;
+    :deep(.stack-mode){
+      --stack-gap:-5px;
+    }
     .input-row{
       flex:1;
       :deep(.upload-btn){

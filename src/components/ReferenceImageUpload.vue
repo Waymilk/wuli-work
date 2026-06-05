@@ -1,12 +1,18 @@
 <template>
   <div class="reference-upload">
-    <div class="upload-list" :class="{ 'stack-mode': isStackMode }" :style="stackContainerStyle">
+    <div
+      class="upload-list"
+      :class="{ 'stack-mode': isStackMode, 'is-expanded': isStackExpanded }"
+      :style="stackContainerStyle"
+      @mouseleave="onStackListLeave"
+    >
       <div
         v-for="(item, index) in items"
         :key="item.uid"
         class="upload-btn has-image stack-item"
         :class="[`is-${item.status}`, { disabled }]"
         :style="stackItemStyle(index)"
+        @mouseenter="onStackItemEnter"
       >
         <video
           v-if="isVideoItem(item)"
@@ -43,7 +49,12 @@
         <button class="upload-remove-btn" type="button" @click.stop.prevent="onRemoveImage(item.uid)">×</button>
       </div>
 
-      <div class="upload-wrapper stack-item stack-add-wrapper" v-if="showAddSlot" :style="stackAddItemStyle">
+      <div
+        class="upload-wrapper stack-item stack-add-wrapper"
+        v-if="showAddSlot"
+        :style="stackAddItemStyle"
+        @mouseenter="cancelStackCollapse"
+      >
         <AUpload
           :accept="accept"
           :show-upload-list="false"
@@ -161,6 +172,8 @@ const items = ref<UploadListItem[]>([])
 const uploadSeqByUid = ref<Record<string, number>>({})
 const previewModalOpen = ref(false)
 const previewModalUrl = ref('')
+const isStackExpanded = ref(false)
+let stackCollapseTimer: ReturnType<typeof setTimeout> | null = null
 
 const maxCountSafe = computed(() => Math.max(1, props.maxCount || 1))
 const resolvedTagLabel = computed(() => props.tagLabel)
@@ -191,6 +204,25 @@ function stackItemStyle(index: number): CSSProperties | undefined {
     '--stack-index': String(Math.max(0, index)),
     zIndex: String(Math.max(1, index + 1)),
   } as CSSProperties
+}
+
+function onStackItemEnter() {
+  cancelStackCollapse()
+  if (isStackMode.value) isStackExpanded.value = true
+}
+
+function onStackListLeave() {
+  if (stackCollapseTimer) window.clearTimeout(stackCollapseTimer)
+  stackCollapseTimer = window.setTimeout(() => {
+    isStackExpanded.value = false
+    stackCollapseTimer = null
+  }, 160)
+}
+
+function cancelStackCollapse() {
+  if (!stackCollapseTimer) return
+  window.clearTimeout(stackCollapseTimer)
+  stackCollapseTimer = null
 }
 
 const beforeUpload: UploadProps['beforeUpload'] = () => false
@@ -492,6 +524,7 @@ function onPreviewImage(item: UploadListItem) {
 }
 
 onBeforeUnmount(() => {
+  cancelStackCollapse()
   clearAll()
 })
 
@@ -537,7 +570,7 @@ defineExpose({
       display: block;
     }
 
-    &:not(:hover) .upload-wrapper.stack-add-wrapper {
+    &:not(.is-expanded) .upload-wrapper.stack-add-wrapper {
       top: auto;
       left: auto;
       right: -2px;
@@ -547,13 +580,13 @@ defineExpose({
       transform: none;
     }
 
-    &:not(:hover) .upload-wrapper.stack-add-wrapper :deep(.ant-upload),
-    &:not(:hover) .upload-wrapper.stack-add-wrapper :deep(.ant-upload-select) {
+    &:not(.is-expanded) .upload-wrapper.stack-add-wrapper :deep(.ant-upload),
+    &:not(.is-expanded) .upload-wrapper.stack-add-wrapper :deep(.ant-upload-select) {
       width: 28px;
       height: 28px;
     }
 
-    &:not(:hover) .upload-wrapper.stack-add-wrapper .upload-btn {
+    &:not(.is-expanded) .upload-wrapper.stack-add-wrapper .upload-btn {
       width: 28px;
       height: 28px;
       border-radius: 50%;
@@ -567,16 +600,16 @@ defineExpose({
       }
     }
 
-    &:not(:hover) .upload-wrapper.stack-add-wrapper .upload-plus {
+    &:not(.is-expanded) .upload-wrapper.stack-add-wrapper .upload-plus {
       font-size: 18px;
       color: rgba(0, 0, 0, 0.7);
     }
 
-    &:hover {
+    &.is-expanded {
       z-index: 30;
     }
 
-    &:hover .stack-item {
+    &.is-expanded .stack-item {
       transform: translateX(calc(var(--stack-index) * (var(--card-width) + var(--stack-gap))));
     }
   }
