@@ -45,11 +45,11 @@
                         />
                         <img v-else class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" loading="lazy" decoding="async" />
                         <span class="prompt-mention-label">{{ part.label || '图片' }}</span>
-                        
                       </span>
                       <span v-else>{{ part.text }}</span>
                     </template>
                   </div>
+                  <div v-if="isGeneratingHistoryItem(item)" class="prompt-estimate-tag">{{ estimateTimeText(item) }}</div>
                   <div v-if="isPlainPrompt(item)" class="prompt-tags">
                     <button type="button" class="prompt-tag" @click="applyPromptToPanel(item.prompt)">
                       <IconFont type="icon-shiyongtishici" />
@@ -250,6 +250,7 @@ const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
 })
 const TASK_REQUEST_TIMEOUT_MS = 5 * 60 * 1000
+type TaskCreateResponse = { success?: boolean; task_id?: string | number; job_id?: string | number; detail?: string; message?: string; error?: unknown }
 type GenerateTabPanelExpose = {
   prefillImagePathFromHistory: (payload: ImageHistoryPrefillPayload) => void
   prefillVideoPathFromHistory: (payload: VideoHistoryPrefillPayload) => void
@@ -280,6 +281,11 @@ type VideoHistoryPrefillPayload = {
   resolution?: string
   duration?: string
   referenceAssets?: GenerateReferenceAsset[]
+}
+
+const resolveCreatedTaskId = (response: TaskCreateResponse | undefined) => {
+  const raw = response?.task_id ?? response?.job_id
+  return String(raw || '').trim()
 }
 
 type PromptRenderPart = {
@@ -428,6 +434,10 @@ const isFailedHistoryItem = (item: GenerateHistoryItem) => item.status === 'FAIL
 const failedTitle = (item: GenerateHistoryItem) => (item.status === 'CANCELLED' ? '生成已取消' : '生成失败')
 
 const shouldShowResultGrid = (item: GenerateHistoryItem) => !isFailedHistoryItem(item) || item.resultImages.length > 0
+
+const isGeneratingHistoryItem = (item: GenerateHistoryItem) => item.status === 'PENDING' || item.status === 'RUNNING'
+
+const estimateTimeText = (item: GenerateHistoryItem) => (item.mediaType === 'VIDEO' ? '预估 15-50 分钟' : '预估 5-20 分钟')
 
 const pendingTitle = (item: GenerateHistoryItem) => {
   return item.mediaType === 'VIDEO' ? '生成视频中...' : '生成图片中...'
@@ -705,12 +715,13 @@ const regenerateImageHistoryItem = (item: GenerateHistoryItem) => {
     regeneratingTaskId.value = item.taskId
     setCurrentRegenerateLoading(true)
     try {
-      const res = await request.post<unknown, { success?: boolean; task_id?: string; detail?: string; message?: string; error?: unknown }>('/api/tasks', payload, { timeout: TASK_REQUEST_TIMEOUT_MS })
-      if (!res?.success || !res.task_id) {
+      const res = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload, { timeout: TASK_REQUEST_TIMEOUT_MS })
+      const taskId = resolveCreatedTaskId(res)
+      if (!res?.success || !taskId) {
         throw new Error(resolveErrorMessage(res, '创建任务失败'))
       }
       generateTasksStore.enqueueTask({
-        taskId: res.task_id,
+        taskId,
         mediaType: 'IMAGE',
         displayMeta: {
           prompt: String(payload.prompt || ''),
@@ -750,12 +761,13 @@ const regenerateVideoHistoryItem = (item: GenerateHistoryItem) => {
     regeneratingTaskId.value = item.taskId
     setCurrentRegenerateLoading(true)
     try {
-      const res = await request.post<unknown, { success?: boolean; task_id?: string; detail?: string; message?: string; error?: unknown }>('/api/tasks', payload, { timeout: TASK_REQUEST_TIMEOUT_MS })
-      if (!res?.success || !res.task_id) {
+      const res = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload, { timeout: TASK_REQUEST_TIMEOUT_MS })
+      const taskId = resolveCreatedTaskId(res)
+      if (!res?.success || !taskId) {
         throw new Error(resolveErrorMessage(res, '创建任务失败'))
       }
       generateTasksStore.enqueueTask({
-        taskId: res.task_id,
+        taskId,
         mediaType: 'VIDEO',
         displayMeta: {
           prompt: String(payload.prompt || ''),
@@ -1054,6 +1066,23 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
+}
+
+.prompt-estimate-tag {
+  align-items: center;
+  background: #f5f5f7;
+  border: 1px solid #ececf1;
+  border-radius: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  height: 22px;
+  line-height: 18px;
+  margin-left: 8px;
+  padding: 0 8px;
+  white-space: nowrap;
 }
 
 .prompt-tags {

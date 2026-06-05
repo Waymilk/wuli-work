@@ -347,7 +347,7 @@ function mapHistoryItemToStoreItem(item: HistoryItemResponse): GenerateHistoryIt
   const countLabel = hasVideoHints
     ? (duration ? `${duration}s` : '-')
     : (numImages ? `${numImages}张` : '-')
-  const taskId = String(item.replicate_id || '').trim() || `history-${item.id}`
+  const taskId = String(item.id ?? '').trim() || String(item.replicate_id || '').trim() || 'history-unknown'
   const resultImages = normalizeResultUrls(item.result_urls)
   const referenceAssets = normalizeReferenceAssets(item.reference_images)
   const promptDatasets = dedupePromptDatasets([
@@ -537,7 +537,7 @@ export const useGenerateTasksStore = defineStore('generateTasks', () => {
   function upsertHistoryItems(mappedItems: GenerateHistoryItem[], fromReset: boolean) {
     if (fromReset) {
       const historyTaskIds = new Set(mappedItems.map((item) => item.taskId))
-      const localTasks = items.value.filter((item) => !String(item.taskId).startsWith('history-') && !historyTaskIds.has(item.taskId))
+      const localTasks = items.value.filter((item) => !historyTaskIds.has(item.taskId))
       items.value = [...localTasks]
     }
 
@@ -550,7 +550,7 @@ export const useGenerateTasksStore = defineStore('generateTasks', () => {
       }
       taskIds.add(mapped.taskId)
 
-      if ((mapped.status === 'PENDING' || mapped.status === 'RUNNING') && !String(mapped.taskId).startsWith('history-')) {
+      if (mapped.status === 'PENDING' || mapped.status === 'RUNNING') {
         scheduleNext(mapped.taskId)
       } else if (mapped.status === 'SUCCEEDED' || mapped.status === 'FAILED' || mapped.status === 'CANCELLED') {
         stopPolling(mapped.taskId)

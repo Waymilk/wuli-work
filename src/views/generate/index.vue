@@ -45,11 +45,11 @@
                         />
                         <img v-else class="prompt-mention-thumb" :src="part.datasetUrl" :alt="part.label || '图片'" loading="lazy" decoding="async" />
                         <span class="prompt-mention-label">{{ part.label || '图片' }}</span>
-                        
                       </span>
                       <span v-else>{{ part.text }}</span>
                     </template>
                   </div>
+                  <div v-if="isGeneratingHistoryItem(item)" class="prompt-estimate-tag">{{ estimateTimeText(item) }}</div>
                   <div v-if="isPlainPrompt(item)" class="prompt-tags">
                     <button type="button" class="prompt-tag" @click="applyPromptToPanel(item.prompt)">
                       <IconFont type="icon-shiyongtishici" />
@@ -320,6 +320,10 @@ const isFailedHistoryItem = (item: GenerateHistoryItem) => item.status === 'FAIL
 const failedTitle = (item: GenerateHistoryItem) => (item.status === 'CANCELLED' ? '生成已取消' : '生成失败')
 
 const shouldShowResultGrid = (item: GenerateHistoryItem) => !isFailedHistoryItem(item) || item.resultImages.length > 0
+
+const isGeneratingHistoryItem = (item: GenerateHistoryItem) => item.status === 'PENDING' || item.status === 'RUNNING'
+
+const estimateTimeText = (item: GenerateHistoryItem) => (item.mediaType === 'VIDEO' ? '预估 15-50 分钟' : '预估 5-20 分钟')
 
 const pendingTitle = (item: GenerateHistoryItem) => {
   return item.mediaType === 'VIDEO' ? '生成视频中...' : '生成图片中...'
@@ -770,6 +774,23 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
+}
+
+.prompt-estimate-tag {
+  align-items: center;
+  background: #f5f5f7;
+  border: 1px solid #ececf1;
+  border-radius: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  height: 22px;
+  line-height: 18px;
+  margin-left: 8px;
+  padding: 0 8px;
+  white-space: nowrap;
 }
 
 .prompt-tags {

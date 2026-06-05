@@ -487,7 +487,8 @@ interface TaskCreatedEventPayload {
 
 interface TaskCreateResponse {
   success?: boolean
-  task_id?: string
+  task_id?: string | number
+  job_id?: string | number
   status?: string
   error?: unknown
   detail?: string
@@ -1740,6 +1741,11 @@ async function pollTaskStatus(taskId: string) {
   await pollOnce()
 }
 
+function resolveCreatedTaskId(response: TaskCreateResponse | undefined) {
+  const raw = response?.task_id ?? response?.job_id
+  return String(raw || '').trim()
+}
+
 function buildImageTaskPayload(): ImageTaskPayload | null {
   if (!currentModel.value) return null
   const taskType = currentModel.value.taskType || currentModel.value.runwayModel || ''
@@ -2031,11 +2037,11 @@ async function onGenerate() {
     }
     createRes = await request.post<unknown, TaskCreateResponse>('/api/tasks', payload, { timeout: TASK_REQUEST_TIMEOUT_MS })
 
-    if (!createRes?.success || !createRes?.task_id) {
+    const taskId = resolveCreatedTaskId(createRes)
+    if (!createRes?.success || !taskId) {
       throw new Error(getErrorMessage(createRes, '创建任务失败'))
     }
 
-    const taskId = createRes.task_id
     createdTaskId = taskId
     const ratioLabel = normalizeAspectRatio(selectedRatio.value)
     const sizeLabel = isVideoTask ? (normalizeResolution(selectedSize.value) || '-') : selectedSize.value
