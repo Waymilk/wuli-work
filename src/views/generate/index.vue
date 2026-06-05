@@ -79,7 +79,7 @@
               <div
                 v-if="shouldShowResultGrid(item)"
                 class="grid-wrap"
-                :class="{ 'is-video-grid': item.mediaType === 'VIDEO' }"
+                :class="{ 'is-video-grid': item.mediaType === 'VIDEO', 'has-loading-slot': hasLoadingSlot(item) }"
                 :style="{ '--result-aspect-ratio': aspectRatioCss(item.aspectRatio || item.ratioLabel) }"
               >
                 <div
@@ -142,12 +142,12 @@
                   </div>
 
                   <div v-else class="grid-item-content pending-grid-content">
-                    <ASkeletonImage class="pending-skeleton-image" active />
-                    <div class="pending-title">{{ pendingTitle(item) }}</div>
-                    <!-- <div class="pending-subtitle">{{ pendingSubtitle(item) }}</div> -->
-                    <div v-if="pendingProgress(item)" class="pending-progress">{{ pendingProgress(item) }}</div>
-                    <ASpin size="small" />
                   </div>
+                </div>
+                <div v-if="hasLoadingSlot(item)" class="pending-grid-overlay">
+                  <div class="pending-title">{{ pendingTitle(item) }}</div>
+                  <!-- <div class="pending-subtitle">{{ pendingSubtitle(item) }}</div> -->
+                  <div v-if="pendingProgress(item)" class="pending-progress">{{ pendingProgress(item) }}</div>
                 </div>
               </div>
 
@@ -237,13 +237,11 @@
 
 <script setup lang="ts">
 import { createFromIconfontCN } from '@ant-design/icons-vue'
-import { message, Skeleton as ASkeleton, Spin as ASpin } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
 import GenerateTabPanel from '@/components/GenerateTabPanel.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import InspirationDetailModal, { type InspirationDetailItem } from '@/components/InspirationDetailModal.vue'
 import { useGenerateTasksStore, type GenerateHistoryItem, type GenerateTaskCreatedPayload } from '@/stores/generateTasks'
-
-const ASkeletonImage = ASkeleton.Image
 
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
@@ -320,6 +318,8 @@ const isFailedHistoryItem = (item: GenerateHistoryItem) => item.status === 'FAIL
 const failedTitle = (item: GenerateHistoryItem) => (item.status === 'CANCELLED' ? '生成已取消' : '生成失败')
 
 const shouldShowResultGrid = (item: GenerateHistoryItem) => !isFailedHistoryItem(item) || item.resultImages.length > 0
+
+const hasLoadingSlot = (item: GenerateHistoryItem) => shouldShowResultGrid(item) && slotCount(item) > item.resultImages.length
 
 const isGeneratingHistoryItem = (item: GenerateHistoryItem) => item.status === 'PENDING' || item.status === 'RUNNING'
 
@@ -876,6 +876,10 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.grid-wrap.has-loading-slot {
+  background: url('/wuli-generate-assets/pending-loading.webp') center / cover no-repeat;
+}
+
 .grid-item {
   aspect-ratio: var(--result-aspect-ratio);
   border-radius: 8px;
@@ -885,31 +889,44 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
-.pending-grid-content {
-  align-items: center;
-  background: linear-gradient(135deg, #f8f8fc 0%, #f1f1f8 100%);
-  cursor: default;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  justify-content: center;
-  padding: 20px 16px;
-  text-align: center;
+.grid-wrap.has-loading-slot .grid-item:not(.last-grid-item)::after {
+  background: rgba(255, 255, 255, 0.72);
+  bottom: 0;
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  right: -1px;
+  top: 0;
+  width: 1px;
+  z-index: 4;
 }
 
-.pending-skeleton-image {
-  :deep(.ant-skeleton-image) {
-    border-radius: 8px;
-    height: min(42%, 160px);
-    width: min(72%, 200px);
-  }
+.pending-grid-content {
+  cursor: default;
+  position: relative;
+}
+
+.pending-grid-overlay {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 5;
 }
 
 .pending-title {
-  color: rgba(0, 0, 0, 0.88);
-  font-size: 16px;
+  background: rgba(23, 27, 31, 0.48);
+  border-radius: 6px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 24px;
+  left: 12px;
+  line-height: 18px;
+  max-width: calc(100% - 24px);
+  padding: 6px 8px;
+  position: absolute;
+  top: 12px;
+  white-space: nowrap;
 }
 
 .pending-subtitle {
@@ -921,10 +938,21 @@ onBeforeUnmount(() => {
 }
 
 .pending-progress {
-  color: rgba(105, 40, 254, 0.92);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 6px;
+  bottom: 12px;
+  color: rgba(0, 0, 0, 0.58);
+  display: -webkit-box;
+  font-size: 12px;
+  font-weight: 500;
+  left: 12px;
+  line-height: 17px;
+  max-width: calc(100% - 24px);
+  overflow: hidden;
+  padding: 5px 8px;
+  position: absolute;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .is-loading-slot {
