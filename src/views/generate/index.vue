@@ -108,6 +108,16 @@
                       loading="lazy"
                       decoding="async"
                     />
+                    <a-tooltip v-if="!isVideoResult(item, item.resultImages[slotIndex - 1])" title="下载图片" placement="top">
+                      <button
+                        type="button"
+                        class="grid-image-download-action"
+                        aria-label="下载图片"
+                        @click.stop.prevent="downloadResultImage(item.resultImages[slotIndex - 1])"
+                      >
+                        <IconFont type="icon-xiazai" />
+                      </button>
+                    </a-tooltip>
 
                     <!-- <div class="grid-image-footer-actions">
                       <button
@@ -242,6 +252,7 @@ import GenerateTabPanel from '@/components/GenerateTabPanel.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import InspirationDetailModal, { type InspirationDetailItem } from '@/components/InspirationDetailModal.vue'
 import { useGenerateTasksStore, type GenerateHistoryItem, type GenerateTaskCreatedPayload } from '@/stores/generateTasks'
+import { downloadMediaResource } from '@/utils/download'
 
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
@@ -468,6 +479,20 @@ const onVideoHoverLeave = (event: Event, taskId: string, idx: number) => {
   }
   target.pause()
   target.currentTime = 0
+}
+
+const downloadResultImage = async (src: string) => {
+  const url = String(src || '').trim()
+  if (!url) {
+    message.warning('暂无可下载内容')
+    return
+  }
+
+  try {
+    await downloadMediaResource(url, { fallbackFilename: 'wuli-image.png' })
+  } catch {
+    message.error('下载失败，请重试')
+  }
 }
 
 const aspectRatioCss = (ratioLabel: string) => {
@@ -994,6 +1019,39 @@ onBeforeUnmount(() => {
 .grid-item :deep(.anticon) {
   color: #fff;
   font-size: 16px;
+}
+
+.grid-image-download-action {
+  align-items: center;
+  backdrop-filter: blur(20px);
+  background: rgba(52, 50, 58, 0.56);
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  height: 30px;
+  justify-content: center;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  transform: translateY(-2px);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  width: 30px;
+  z-index: 6;
+}
+
+.grid-item:hover .grid-image-download-action {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.grid-image-download-action:hover {
+  background: rgba(52, 50, 58, 0.72);
 }
 
 .grid-image-footer-actions {

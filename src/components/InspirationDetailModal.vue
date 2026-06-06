@@ -134,6 +134,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { createFromIconfontCN } from '@ant-design/icons-vue'
 import { CloseOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { downloadMediaResource } from '@/utils/download'
 
 export type InspirationDetailAction = {
   key: 'reference' | 'clone' | string
@@ -252,18 +253,6 @@ function isVideoPromptDataset(dataset: InspirationDetailPromptDataset | undefine
   return dataset.mediaType === 'video' || dataset.label === '视频' || isVideoUrl(dataset.datasetUrl)
 }
 
-function resolveDownloadFilename(src: string, type: InspirationDetailThumbnail['type']) {
-  try {
-    const url = new URL(src, window.location.href)
-    const lastSegment = url.pathname.split('/').filter(Boolean).pop()
-    if (lastSegment) return decodeURIComponent(lastSegment)
-  } catch {
-    const lastSegment = src.split('?')[0].split('#')[0].split('/').filter(Boolean).pop()
-    if (lastSegment) return lastSegment
-  }
-  return type === 'VIDEO' ? 'wuli-video.mp4' : 'wuli-image.png'
-}
-
 async function downloadCurrentMedia() {
   if (isDownloading.value) return
   const media = currentMedia.value
@@ -274,25 +263,14 @@ async function downloadCurrentMedia() {
   }
 
   isDownloading.value = true
-  let objectUrl = ''
 
   try {
-    const response = await fetch(src)
-    if (!response.ok) throw new Error('download failed')
-    const blob = await response.blob()
-    objectUrl = URL.createObjectURL(blob)
-
-    const link = document.createElement('a')
-    link.href = objectUrl
-    link.download = resolveDownloadFilename(src, media.type)
-    link.rel = 'noopener noreferrer'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    await downloadMediaResource(src, {
+      fallbackFilename: media.type === 'VIDEO' ? 'wuli-video.mp4' : 'wuli-image.png',
+    })
   } catch {
     message.error('下载失败，请重试')
   } finally {
-    if (objectUrl) URL.revokeObjectURL(objectUrl)
     isDownloading.value = false
   }
 }
@@ -686,7 +664,7 @@ const resolveMergedActionIcon = (action: MergedDetailAction) => {
   }
 
   :deep(.anticon) {
-    font-size: 16px;
+    font-size: 25px;
     line-height: 1;
   }
 }

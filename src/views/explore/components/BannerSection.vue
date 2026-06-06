@@ -38,8 +38,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { createFromIconfontCN } from '@ant-design/icons-vue'
+import request from '@/utils/request'
 
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
@@ -50,7 +51,21 @@ type BannerItem = {
   linkUrl: string
 }
 
-const carouselBanners: BannerItem[] = [
+type BannerGroup = {
+  id?: number
+  name?: string
+  images?: unknown[]
+}
+
+type BannerResponse = {
+  success?: boolean
+  data?: {
+    banners?: BannerGroup[]
+  }
+  error?: string
+}
+
+const fallbackCarouselBanners: BannerItem[] = [
   {
     image: 'https://img.alicdn.com/imgextra/i2/O1CN01pspqsJ1hQd8596HyO_!!6000000004272-2-tps-1920-400.png',
     linkUrl: '/generate',
@@ -61,7 +76,7 @@ const carouselBanners: BannerItem[] = [
   },
 ]
 
-const staticBanners: BannerItem[] = [
+const fallbackStaticBanners: BannerItem[] = [
   {
     image: 'https://img.alicdn.com/imgextra/i3/O1CN01UM5CYb1l5LBFVKbeY_!!6000000004767-2-tps-1200-400.png',
     linkUrl: '/generate',
@@ -72,7 +87,35 @@ const staticBanners: BannerItem[] = [
   },
 ]
 
+const carouselBanners = ref<BannerItem[]>([...fallbackCarouselBanners])
+const staticBanners = ref<BannerItem[]>([...fallbackStaticBanners])
 const carouselRef = ref<{ next: () => void; prev: () => void } | null>(null)
+
+const toBannerItems = (images: unknown[] | undefined) => (
+  (images || [])
+    .map((image) => String(image || '').trim())
+    .filter(Boolean)
+    .map((image) => ({ image, linkUrl: '/generate' }))
+)
+
+async function loadBanners() {
+  try {
+    const res = await request.get<unknown, BannerResponse>('/api/banner')
+    if (!res?.success) return
+    const groups = Array.isArray(res.data?.banners) ? res.data.banners : []
+    const nextCarouselBanners = toBannerItems(groups[0]?.images)
+    const nextStaticBanners = [
+      toBannerItems(groups[1]?.images)[0] || fallbackStaticBanners[0],
+      toBannerItems(groups[2]?.images)[0] || fallbackStaticBanners[1],
+    ]
+
+    carouselBanners.value = nextCarouselBanners.length ? nextCarouselBanners : [...fallbackCarouselBanners]
+    staticBanners.value = nextStaticBanners
+  } catch {
+    carouselBanners.value = [...fallbackCarouselBanners]
+    staticBanners.value = [...fallbackStaticBanners]
+  }
+}
 
 function nextSlide() {
   carouselRef.value?.next()
@@ -81,6 +124,10 @@ function nextSlide() {
 function prevSlide() {
   carouselRef.value?.prev()
 }
+
+onMounted(() => {
+  void loadBanners()
+})
 </script>
 
 <style scoped lang="scss">

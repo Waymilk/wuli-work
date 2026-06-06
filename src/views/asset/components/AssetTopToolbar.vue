@@ -317,6 +317,14 @@ const selectTime = (preset: string) => {
 
 const onRangeChange = (_dates: unknown, dateStrings: [string, string] | string[]) => {
   const [start, end] = Array.isArray(dateStrings) ? dateStrings : []
+  const hasStart = start !== undefined && start !== null && String(start).trim() !== ''
+  const hasEnd = end !== undefined && end !== null && String(end).trim() !== ''
+  if (!hasStart || !hasEnd) {
+    emit('update:timePreset', 'all')
+    emit('update:timeRange', null)
+    return
+  }
+
   const min = Number(start)
   const max = Number(end)
   if (!Number.isFinite(min) || !Number.isFinite(max)) {
