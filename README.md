@@ -7,7 +7,7 @@ Wuli AI 是一个基于 Vue 3、TypeScript 和 Vite 的 AI 图片/视频生成�
 - 探索页：加载后端模型列表，提供生成入口，并展示首页 Banner 与作品流。
 - 生成页：支持图片生成、视频生成、参考图上传、prompt 图片 token、任务轮询和历史结果展示。
 - 资产页：查询历史资源，支持收藏、取消收藏和删除历史记录。
-- 画布页：从 `https://wuli.art` 获取画布分类、快捷模板和模板广场数据。
+- 画布页：从 `http://p2vcom.com` 获取画布分类、快捷模板和模板广场数据。
 - 登录体系：支持注册/登录、token 本地持久化、接口自动携带鉴权头；全局 401 会清空登录态并弹出登录窗口。
 
 ## 技术栈
@@ -68,7 +68,7 @@ Authorization: Bearer <token>
 /api -> http://121.43.53.154:8088
 ```
 
-画布相关接口在 `src/views/canvas/api.ts` 中直接访问 `https://wuli.art`。
+画布相关接口在 `src/views/canvas/api.ts` 中直接访问 `http://p2vcom.com`。
 
 ## 目录结构
 

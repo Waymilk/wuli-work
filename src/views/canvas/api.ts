@@ -5,7 +5,7 @@ import type {
   WuliApiResponse,
 } from './types'
 
-const API_BASE = 'https://wuli.art'
+const API_BASE = 'http://p2vcom.com'
 
 const post = async <T>(url: string, data: unknown) => {
   const response = await request.post<unknown, WuliApiResponse<T>>(`${API_BASE}${url}`, data)
