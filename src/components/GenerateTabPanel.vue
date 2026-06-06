@@ -2516,7 +2516,7 @@ onBeforeUnmount(() => {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   margin-top: -24px;
   position: relative;
-  z-index: 2;
+  z-index: 12;
   display: flex;
   flex-direction: column;
   &.mini{

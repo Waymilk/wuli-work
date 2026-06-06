@@ -269,7 +269,7 @@ onBeforeUnmount(() => {
     position: sticky;
     top: 0;
     transition: box-shadow 0.3s ease;
-    z-index: 11;
+    z-index: 6;
 
     &.scrolled {
       // box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
