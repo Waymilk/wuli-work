@@ -4,7 +4,6 @@
     <GenerateTabPanel pollMode="external" modelsFetchMode="explore" @task-created="onTaskCreated" />
     <BannerSection />
     <GallerySection />
-    <div style="width: 100%; height: 1200px"></div>
   </div>
 </template>
 
@@ -28,14 +27,15 @@ function onTaskCreated(payload: GenerateTaskCreatedPayload) {
 
 <style scoped lang="scss">
 .explore-page {
+    box-sizing: border-box;
     overflow-y: auto;
     width: 100%;
     height: 100%;
     margin: 0 auto;
     max-width: 1492px;
-    min-width: 1136px;
-    padding-left: 68px;
-    padding-right: 68px;
+    min-width: 0;
+    padding-left: clamp(16px, 4vw, 68px);
+    padding-right: clamp(16px, 4vw, 68px);
     scrollbar-width: none;
 }
 

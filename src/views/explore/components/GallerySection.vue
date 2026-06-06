@@ -18,7 +18,7 @@
       </div>
     </div>
 
-    <div class="waterfall-wrapper">
+    <div ref="waterfallWrapperRef" class="waterfall-wrapper">
       <div class="container">
         <transition-group
           name="waterfall-switch"
@@ -106,9 +106,12 @@ const isScrolled = ref(false)
 const detailOpen = ref(false)
 const activeDetail = ref<GalleryItem | null>(null)
 
-const columnCount = 5
-const columnWidth = 268
+const maxColumnCount = 5
+const maxWaterfallWidth = 1356
+const minColumnWidth = 220
 const gap = 4
+const waterfallWrapperRef = ref<HTMLElement | null>(null)
+const waterfallWrapperWidth = ref(maxWaterfallWidth)
 
 const avatarPool = [
   '/wuli-icons/avatar-default.png',
@@ -119,7 +122,7 @@ function parseSize(styleText: string) {
   const widthMatch = styleText.match(/width:\s*([\d.]+)px/)
   const heightMatch = styleText.match(/height:\s*([\d.]+)px/)
   return {
-    width: widthMatch ? Number(widthMatch[1]) : columnWidth,
+    width: widthMatch ? Number(widthMatch[1]) : 268,
     height: heightMatch ? Number(heightMatch[1]) : 300,
   }
 }
@@ -147,27 +150,45 @@ const filteredItems = computed(() => {
   return normalizedItems.value.filter((item) => item.type === activeFilter.value)
 })
 
+const activeColumnCount = computed(() => {
+  const availableWidth = Math.max(waterfallWrapperWidth.value, minColumnWidth)
+  const count = Math.floor((availableWidth + gap) / (minColumnWidth + gap))
+  return Math.max(1, Math.min(maxColumnCount, count))
+})
+
+const activeColumnWidth = computed(() => {
+  const columns = activeColumnCount.value
+  const availableWidth = Math.max(waterfallWrapperWidth.value, minColumnWidth)
+  return (availableWidth - gap * (columns - 1)) / columns
+})
+
 const positionedItems = computed<GalleryItem[]>(() => {
-  const colHeights = Array.from({ length: columnCount }, () => 0)
+  const columns = activeColumnCount.value
+  const columnWidth = activeColumnWidth.value
+  const colHeights = Array.from({ length: columns }, () => 0)
 
   return filteredItems.value.map((item) => {
     let targetCol = 0
-    for (let i = 1; i < columnCount; i += 1) {
+    for (let i = 1; i < columns; i += 1) {
       if (colHeights[i] < colHeights[targetCol]) targetCol = i
     }
 
     const left = targetCol * (columnWidth + gap)
     const top = colHeights[targetCol]
-    colHeights[targetCol] += item.height + gap
+    const aspectRatio = item.width > 0 ? item.height / item.width : 1
+    const scaledHeight = columnWidth * aspectRatio
+    colHeights[targetCol] += scaledHeight + gap
 
     return {
       ...item,
+      width: columnWidth,
+      height: scaledHeight,
       positionStyle: {
         position: 'absolute',
         left: `${left}px`,
         top: `${top}px`,
         width: `${columnWidth}px`,
-        height: `${item.height}px`,
+        height: `${scaledHeight}px`,
       },
     }
   })
@@ -195,9 +216,15 @@ function openDetail(item: GalleryItem) {
 }
 
 let scrollHost: HTMLElement | null = null
+let waterfallResizeObserver: ResizeObserver | null = null
 const onScroll = () => {
   if (!scrollHost) return
   isScrolled.value = scrollHost.scrollTop > 8
+}
+
+const updateWaterfallWidth = () => {
+  const nextWidth = waterfallWrapperRef.value?.getBoundingClientRect().width || maxWaterfallWidth
+  waterfallWrapperWidth.value = Math.max(0, Math.floor(nextWidth))
 }
 
 onMounted(() => {
@@ -206,19 +233,34 @@ onMounted(() => {
     scrollHost.addEventListener('scroll', onScroll, { passive: true })
     onScroll()
   }
+
+  updateWaterfallWidth()
+  if (waterfallWrapperRef.value && typeof ResizeObserver !== 'undefined') {
+    waterfallResizeObserver = new ResizeObserver(updateWaterfallWidth)
+    waterfallResizeObserver.observe(waterfallWrapperRef.value)
+  } else {
+    window.addEventListener('resize', updateWaterfallWidth, { passive: true })
+  }
 })
 
 onBeforeUnmount(() => {
   if (scrollHost) scrollHost.removeEventListener('scroll', onScroll)
+  if (waterfallResizeObserver) {
+    waterfallResizeObserver.disconnect()
+    waterfallResizeObserver = null
+  } else {
+    window.removeEventListener('resize', updateWaterfallWidth)
+  }
 })
 </script>
 
 <style scoped lang="scss">
 
 .gallery-section {
+  box-sizing: border-box;
   margin: 0 auto;
   max-width: 1356px;
-  min-width: 1000px;
+  min-width: 0;
   position: relative;
   width: 100%;
 
@@ -286,6 +328,7 @@ onBeforeUnmount(() => {
   .waterfall-wrapper {
     border-radius: 16px 16px 0 0;
     overflow: hidden;
+    width: 100%;
   }
 
   .container {

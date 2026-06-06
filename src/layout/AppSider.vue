@@ -2,7 +2,7 @@
   <aside class="sider">
     <div class="sider-children">
       <div class="top">
-        <img src="/wuli-icons/logo.svg" alt="呜哩AI" class="logo" />
+        <img src="/wuli-assets/logo.png" alt="闪帧 P2V" class="logo" />
         <nav class="menu">
           <router-link
             v-for="item in menuItems"
@@ -304,6 +304,30 @@
         </a-form>
       </div>
     </a-modal>
+
+    <a-modal
+      v-model:open="agreementModalOpen"
+      :footer="null"
+      :width="720"
+      centered
+      :closable="false"
+      wrapClassName="sider-agreement-modal"
+    >
+      <button class="wuli-modal-close agreement-close" type="button" @click="agreementModalOpen = false">×</button>
+      <div class="agreement-modal-body">
+        <h3 class="agreement-title">平台协议</h3>
+        <div class="agreement-content">
+          <p
+            v-for="(line, index) in agreementLines"
+            :key="`${index}-${line.text}`"
+            class="agreement-line"
+            :class="{ 'agreement-line-title': line.isTitle, 'agreement-line-empty': !line.text }"
+          >
+            {{ line.text || '\u00a0' }}
+          </p>
+        </div>
+      </div>
+    </a-modal>
   </aside>
 </template>
 
@@ -316,6 +340,7 @@ import AuthLoginModal from '@/components/AuthLoginModal.vue'
 import PurchaseCreditsModal from './components/PurchaseCreditsModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import request from '@/utils/request'
+import { platformAgreementText } from './constants/platformAgreement'
 
 const IconFont = createFromIconfontCN({
   scriptUrl: 'https://at.alicdn.com/t/c/font_5079523_nb5cyl1zajc.js',
@@ -361,6 +386,7 @@ const avatarModalOpen = ref(false)
 const apiModalOpen = ref(false)
 const feedbackModalOpen = ref(false)
 const accountModalOpen = ref(false)
+const agreementModalOpen = ref(false)
 const messagePanelOpen = ref(false)
 const morePopoverOpen = ref(false)
 const themeSubmenuOpen = ref(false)
@@ -410,6 +436,16 @@ const resolvedAvatarUrl = computed(() => {
   const next = String(avatarUrl.value || authStore.user?.avatar_url || '').trim()
   return next || defaultAvatarUrl
 })
+const agreementLines = computed(() =>
+  platformAgreementText.split(/\r?\n/).map((rawLine) => {
+    const trimmedLine = rawLine.replace(/\s+$/g, '')
+    const titleMatch = trimmedLine.match(/^\*\*(.+?)\*\*\s*$/)
+    return {
+      text: titleMatch ? titleMatch[1].trim() : trimmedLine.replace(/\*\*/g, '').trimEnd(),
+      isTitle: Boolean(titleMatch),
+    }
+  }),
+)
 
 const openInviteModal = () => {
   inviteModalOpen.value = true
@@ -472,6 +508,9 @@ const onMoreMenuAction = async (key: string) => {
   themeSubmenuOpen.value = false
   if (key === 'feedback') {
     feedbackModalOpen.value = true
+  }
+  if (key === 'agreement') {
+    agreementModalOpen.value = true
   }
   if (key === 'account') {
     if (!isLoggedIn.value) {
@@ -832,10 +871,11 @@ watch(accountModalOpen, (open) => {
 }
 
 .logo {
-  width: 80px;
-  height: 80px;
-  margin-top: 4px;
+  width: 60px;
+  height: auto;
+  margin-top: 14px;
   flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .menu {
@@ -1195,6 +1235,16 @@ watch(accountModalOpen, (open) => {
   padding: 0;
 }
 
+:global(.sider-agreement-modal .ant-modal-content) {
+  border-radius: 16px;
+  overflow: hidden;
+  padding: 0;
+}
+
+:global(.sider-agreement-modal .ant-modal-body) {
+  padding: 0;
+}
+
 .wuli-modal-close {
   position: absolute;
   right: 16px;
@@ -1211,12 +1261,67 @@ watch(accountModalOpen, (open) => {
 }
 
 .feedback-close,
-.account-close {
+.account-close,
+.agreement-close {
   right: 14px;
   top: 10px;
   z-index: 2;
   color: rgba(0, 0, 0, 0.35);
   font-size: 18px;
+}
+
+.agreement-modal-body {
+  display: flex;
+  flex-direction: column;
+  max-height: 78vh;
+}
+
+.agreement-title {
+  align-items: center;
+  border-bottom: 1px solid #f0f0f0;
+  color: rgba(0, 0, 0, 0.88);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 18px;
+  font-weight: 600;
+  height: 64px;
+  justify-content: center;
+  line-height: 26px;
+  margin: 0;
+}
+
+.agreement-content {
+  color: rgba(0, 0, 0, 0.72);
+  flex: 1 1 auto;
+  font-size: 14px;
+  line-height: 1.8;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 22px 28px 28px;
+  scrollbar-width: thin;
+}
+
+.agreement-line {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agreement-line-title {
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 18px 0 10px;
+}
+
+.agreement-line:first-child {
+  margin-top: 0;
+  text-align: center;
+}
+
+.agreement-line-empty {
+  line-height: 8px;
+  margin-bottom: 6px;
 }
 
 .feedback-modal-head {
