@@ -13,24 +13,10 @@
       <section class="auth-left-panel">
         <img
           class="auth-main-logo"
-          src="https://img.alicdn.com/imgextra/i2/O1CN01UkIs9Q1RMTezxzVH8_!!6000000002097-2-tps-1480-680.png"
+          src="/public/wuli-assets/logo_title.png"
           alt="wuli"
         />
-        <div class="auth-left-tip">AIGC驱动的创意设计生产力平台</div>
-
-        <div class="auth-slogan-line">
-          <img
-            class="auth-slogan-star"
-            src="https://img.alicdn.com/imgextra/i3/O1CN01C2KtPS1LCVLGonjeW_!!6000000001263-55-tps-15-14.svg"
-            alt=""
-          />
-          <div class="auth-slogan-text">呜哩一下 创意开花</div>
-          <img
-            class="auth-slogan-star"
-            src="https://img.alicdn.com/imgextra/i3/O1CN01C2KtPS1LCVLGonjeW_!!6000000001263-55-tps-15-14.svg"
-            alt=""
-          />
-        </div>
+        <!-- <div class="auth-left-tip">创意设计生产力平台</div> -->
 
         <div class="auth-feature-layer">
           <img
@@ -79,7 +65,7 @@
 
       <section class="auth-right-panel">
         <div class="auth-form-panel">
-          <h3 class="auth-title">{{ isRegister ? '欢迎到访呜哩星球' : '欢迎回到呜哩星球' }}</h3>
+          <h3 class="auth-title">{{ isRegister ? '欢迎到访闪帧' : '欢迎回到闪帧' }}</h3>
 
           <a-form layout="vertical" class="auth-form" @submit.prevent>
             <a-form-item>
@@ -107,17 +93,9 @@
           <a-checkbox v-model:checked="agreed" class="auth-agreement">
             <span>
               我已阅读并同意
-              <a
-                href="https://terms.alicdn.com/legal-agreement/terms/c_platform_service_agreement/20251222124515217/20251222124515217.html"
-                target="_blank"
-                rel="noopener noreferrer"
-              >《用户协议》</a>
+              <button class="auth-agreement-link" type="button" @click.stop="openAgreementModal">《用户协议》</button>
               和
-              <a
-                href="https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20251222121419502/20251222121419502.html"
-                target="_blank"
-                rel="noopener noreferrer"
-              >《隐私政策》</a>
+              <button class="auth-agreement-link" type="button" @click.stop="openAgreementModal">《隐私政策》</button>
             </span>
           </a-checkbox>
 
@@ -134,6 +112,7 @@
         </div>
       </section>
     </div>
+    <PlatformAgreementModal v-model:open="agreementModalOpen" />
   </a-modal>
 </template>
 
@@ -142,6 +121,7 @@ import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
+import PlatformAgreementModal from '@/components/PlatformAgreementModal.vue'
 
 const props = defineProps<{ open: boolean }>()
 
@@ -168,6 +148,7 @@ const confirmPassword = ref('')
 const agreed = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
+const agreementModalOpen = ref(false)
 const authStore = useAuthStore()
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -195,6 +176,10 @@ function toggleMode() {
   errorMessage.value = ''
   password.value = ''
   confirmPassword.value = ''
+}
+
+function openAgreementModal() {
+  agreementModalOpen.value = true
 }
 
 async function handleSubmit() {
@@ -308,7 +293,7 @@ watch(
   color: #fff;
   font-size: 14px;
   height: 20px;
-  margin-top: -20px;
+  margin-top: 20px;
 }
 
 .auth-slogan-line {
@@ -542,15 +527,20 @@ watch(
   margin-top: -8px;
 }
 
-.auth-agreement a {
+.auth-agreement-link {
+  background: transparent;
+  border: none;
   color: #6928fe;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
 }
 
-.auth-agreement a:hover {
+.auth-agreement-link:hover {
   color: #8b52ff;
 }
 
-.auth-agreement a:active {
+.auth-agreement-link:active {
   color: #4b18d9;
 }
 
