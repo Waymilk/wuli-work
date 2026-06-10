@@ -42,6 +42,26 @@ export interface BackendModelConfig extends BackendModelOptions {
   options?: BackendModelOptions
 }
 
+export type BackendModelPricingUnit = 'per_image' | 'per_second' | 'per_generation' | string
+
+export interface BackendModelPricingRule {
+  generation_type?: string | null
+  resolution?: string | number | null
+  unit?: BackendModelPricingUnit | null
+  unit_cost?: number | string | null
+  min_quantity?: number | string | null
+  max_quantity?: number | string | null
+  is_active?: boolean | null
+}
+
+export interface BackendModelPricing {
+  mode?: string | null
+  unit?: BackendModelPricingUnit | null
+  formula?: string | null
+  has_active_rules?: boolean | null
+  rules?: BackendModelPricingRule[] | null
+}
+
 export interface BackendModelRecord {
   id?: number
   name?: string
@@ -50,4 +70,5 @@ export interface BackendModelRecord {
   costPerGeneration?: number | string | null
   is_active?: boolean
   config?: BackendModelConfig | string | null
+  pricing?: BackendModelPricing | BackendModelPricingRule[] | null
 }

@@ -354,6 +354,7 @@ import type {
   BackendModelConfig,
   BackendModelRecord,
   BackendModelOptions,
+  BackendModelPricingRule,
   ModelOptionPrimitive,
   ModelOptionValue,
 } from '@/types/backend-model'
@@ -370,6 +371,7 @@ type VideoSettingFeature = 'first_frame' | 'first_last_frame' | 'multimodal_ref'
 type UploadSlotConfig = { key: UploadSlotKey; isVideo: boolean; maxCount: number; tagLabel: string; accept: string }
 type CapTagItem = { key: string; label: string; feature?: VideoSettingFeature; iconSrc?: string }
 type PrefillReferenceAsset = { imageId: number; url: string; mediaType: 'image' | 'video' }
+type PricingUnit = 'per_image' | 'per_second' | 'per_generation'
 type PrefillVideoPathPayload = {
   prompt?: string
   modelId?: number
@@ -398,6 +400,14 @@ type ReferenceUploadExpose = {
   uploadFiles: (files: File[]) => number
 }
 
+interface ModelPricingRule {
+  resolution: string
+  unit: PricingUnit
+  unitCost: number
+  minQuantity?: number
+  maxQuantity?: number
+}
+
 const props = withDefaults(defineProps<{
   showMini?: boolean
   pollMode?: PollMode
@@ -424,6 +434,7 @@ interface ModelItem {
   taskType?: string
   runwayModel?: string
   costPerGeneration?: number
+  pricingRules: ModelPricingRule[]
   isActive: boolean
   name: string
   vendor: string
@@ -639,7 +650,7 @@ const uploadStates = ref<Record<UploadSlotKey, {
   firstFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
   lastFrame: { files: [], uploading: false, error: '', imageIds: [], datasets: [] },
 })
-const generateCost = computed(() => currentModel.value?.costPerGeneration)
+const generateCost = computed(() => resolveSelectedGenerateCost())
 const hasGenerateCost = computed(() => typeof generateCost.value === 'number')
 const showGenerateCost = computed(() => !isSubmitting.value && hasPrompt.value && Boolean(currentModel.value))
 const generateButtonLabelKey = computed(() => {
@@ -1249,8 +1260,8 @@ function toStringList(value: ModelOptionValue): string[] {
   if (typeof value === 'string') {
     const trimmed = value.trim()
     if (!trimmed) return []
-    if (/[,\|/，]/.test(trimmed)) {
-      return trimmed.split(/[,\|/，]/).map((item) => item.trim()).filter(Boolean)
+    if (/[,|/，]/.test(trimmed)) {
+      return trimmed.split(/[,|/，]/).map((item) => item.trim()).filter(Boolean)
     }
     return [trimmed]
   }
@@ -1300,7 +1311,7 @@ function dedupeList(items: string[]) {
 
 function expandNumImageOptions(items: string[]) {
   if (!items.length) return []
-  const cleaned = items.map((item) => item.replace(/[\[\]\(\)\s]/g, ''))
+  const cleaned = items.map((item) => item.replace(/[\]()\s[]/g, ''))
 
   if (cleaned.length === 2) {
     const min = Number(cleaned[0])
@@ -1431,6 +1442,76 @@ function normalizeCostPerGeneration(raw: unknown): number | undefined {
   return undefined
 }
 
+function normalizeNonNegativeNumber(raw: unknown): number | undefined {
+  if (raw === null || raw === undefined || raw === '') return undefined
+  const parsed = typeof raw === 'number' ? raw : Number(String(raw).trim())
+  if (!Number.isFinite(parsed) || parsed < 0) return undefined
+  return parsed
+}
+
+function normalizePricingUnit(raw: unknown): PricingUnit | undefined {
+  const value = String(raw || '').trim()
+  if (value === 'per_image' || value === 'per_second' || value === 'per_generation') return value
+  return undefined
+}
+
+function normalizePricingRule(raw: BackendModelPricingRule): ModelPricingRule | null {
+  if (!raw || raw.is_active === false) return null
+  const resolution = String(raw.resolution ?? '').trim()
+  const unit = normalizePricingUnit(raw.unit)
+  const unitCost = normalizeNonNegativeNumber(raw.unit_cost)
+  if (!resolution || !unit || unitCost === undefined) return null
+
+  return {
+    resolution,
+    unit,
+    unitCost,
+    minQuantity: normalizeNonNegativeNumber(raw.min_quantity),
+    maxQuantity: normalizeNonNegativeNumber(raw.max_quantity),
+  }
+}
+
+function normalizePricingRules(record: BackendModelRecord): ModelPricingRule[] {
+  const rawRules = Array.isArray(record.pricing)
+    ? record.pricing
+    : record.pricing?.rules
+  if (!Array.isArray(rawRules)) return []
+  return rawRules
+    .map((rule) => normalizePricingRule(rule))
+    .filter((rule): rule is ModelPricingRule => Boolean(rule))
+}
+
+function normalizeResolutionKey(raw: string) {
+  return String(raw || '').trim().toLowerCase()
+}
+
+function findPricingRule(model: ModelItem, resolution: string) {
+  const resolutionKey = normalizeResolutionKey(resolution)
+  if (!resolutionKey) return undefined
+  return model.pricingRules.find((rule) => normalizeResolutionKey(rule.resolution) === resolutionKey)
+}
+
+function resolveSelectedGenerateCost(): number | undefined {
+  const model = currentModel.value
+  if (!model) return undefined
+
+  const selectedRule = findPricingRule(model, selectedSize.value)
+  if (!selectedRule) return model.costPerGeneration
+
+  if (selectedRule.unit === 'per_generation') return selectedRule.unitCost
+
+  if (!isVideo.value && selectedRule.unit === 'per_image') {
+    return selectedRule.unitCost * normalizeNumImages(selectedCount.value)
+  }
+
+  if (isVideo.value && selectedRule.unit === 'per_second') {
+    const duration = Number(normalizeDuration(selectedCount.value))
+    if (Number.isFinite(duration) && duration > 0) return selectedRule.unitCost * duration
+  }
+
+  return model.costPerGeneration
+}
+
 function findValueByKeys(source: unknown, keys: string[]): unknown {
   if (!source || typeof source !== 'object') return undefined
   const queue: unknown[] = [source]
@@ -1494,6 +1575,7 @@ function mapBackendModel(record: BackendModelRecord, kind: 'image' | 'video'): M
     taskType: taskType || undefined,
     runwayModel: runwayModel || undefined,
     costPerGeneration: resolveModelCost(record, config),
+    pricingRules: normalizePricingRules(record),
     isActive: Boolean(record.is_active),
     name: modelName,
     vendor,
